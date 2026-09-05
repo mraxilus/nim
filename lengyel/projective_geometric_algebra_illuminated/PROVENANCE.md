@@ -758,13 +758,36 @@ without being asked.
 object's own ink and outlined in the marker's stroke, so it reads as part of the marker
 family; hover and focus wear none, as they carry no pulse. Where it sits is one more
 decision `marker.nim` makes (`Marker.has_label`, `Marker.label_at`): centred `GAP_MARKER`
-plus half `HEIGHT_MARKER_LABEL` (14 px) above the outline's top at the object's own place —
+plus half `HEIGHT_MARKER_LABEL` (16 px) above the outline's top at the object's own place —
 a ring's top (so a held marker's swell lifts the label with it), the upper rail where it
-passes the line's support, a loop's or bands' highest projected point — and, for the sky's
-frame, just inside the top edge, since above a frame that is the viewport is off screen.
-Placed with the marker rather than by each front-end so the two agree by construction;
-each centres its own text on the point and keeps its own face (the page's sans at the shared
-height, set by `glue.js` from `nimOverlayMetrics`; Dear ImGui's loaded font on the desktop).
+passes the line's support, the bands' highest projected point, a plane's circle as below —
+and, for the sky's frame, just inside the top edge, since above a frame that is the
+viewport is off screen. Placed with the marker rather than by each front-end so the two
+agree by construction; each centres its own text on the point and keeps its own face (the
+page's sans at the shared height, set by `glue.js` from `nimOverlayMetrics`; on the desktop
+a face of its own, below).
+
+**A plane's label stands on the disc's column at the height of its circle's true top.**
+The top was the highest of the 64 projected vertices of the marker's circle, and as the
+camera orbited the winning vertex changed, so the label hopped by a segment at a time.
+`marker.topmostOnCircle` solves the top of the projected circle in closed form: clip y and
+clip w are affine in (cos θ, sin θ), so screen y is monotone in `N/D` with `N = a·cos + b·sin
++ c` and `D = d·cos + e·sin + f`, stationary where `(b·d − a·e) + (c·d − a·f)·sin + (b·f −
+c·e)·cos = 0`; the two roots `atan2(Q, R) ± arccos(−P/√(Q²+R²))` are the top and the
+bottom, and the higher one in front of the eye is taken. Continuous in the camera, so the
+label glides (where a thin oblique ellipse's top runs along its length it still moves
+steadily). Its **height** alone is used; the label's x is the disc centre's column. That is
+what makes the flip invisible: seen from just above the plane the top is the far rim, from
+just below the near rim, and for a disc off the sight axis those two tops part in x at the
+edge-on moment (the far one nearer the vanishing point) while both go to the plane's
+horizon in y — so the centre's column, which is continuous, carries the label, and the
+swap of rims happens at one pixel. Rejected: the top's own x, which popped by 3 px at the
+flip on the opening scene's ground plane and would pop by hundreds for a disc to the side.
+Where the true top is cut away behind the eye, or the centre stands behind it, the sampled
+rule stands in. Verified by suite: over a full orbit in 0.002 rad steps the label never
+takes a step more than twice the one before plus a pixel while the sampled top does; a
+milliradian either side of the flip the labels stand under a pixel apart, disc on the axis
+and off it; the closed form on a circle facing the camera gives the ring rule's answer.
 **The halo is the backdrop's colour, not the marker's white.** Cartographic label
 practice (Peterson, *Cartographer's Toolkit*; Dawson, *About label halos*; Esri, *Polishing
 your halo*) is that a halo blends with the background so it knocks the surroundings out of
@@ -772,8 +795,13 @@ the letters, while a contrasting halo dominates them — which is what the white
 at 3 px and again at 1.5 px. Glanceable on-screen text reads better bigger, regular width,
 never light (NN/g, *Typography for Glanceable Reading*; Microsoft's mixed-reality guidance
 puts the comfortable floor at 14 px). So: `WIDTH_MARKER_LABEL_HALO` = 2 px of `Ink.Backdrop`
-at `ALPHA_MARKER_LABEL_HALO` = 0.85, a 14 px face at weight 500 with 0.02 em of tracking,
-the fill still the object's ink; the marker keeps its white for itself. The browser stages
+at `ALPHA_MARKER_LABEL_HALO` = 0.85, a 16 px face at weight 600 with 0.02 em of tracking
+(14 px at 500 read small and light over the scene; sizes chosen by eye), the fill still the
+object's ink; the marker keeps its white for itself. The desktop sets the label in a face of
+its own, `PATH_FONT_LABEL` = Noto Sans Bold at `HEIGHT_MARKER_LABEL` (the only heavier weight
+the system's Noto Sans package ships; there is no semibold), with the math and symbol faces
+merged in at that size so a name like `G = L ∧ c` keeps its wedge — it drew as a box without
+them — and falls back to the UI face where the file is missing. The browser stages
 one SVG `<text>` per selected slot with `paint-order: stroke` and reads the ink colours
 into a table once at start-up (`COLOUR_INK_CSS`, since `nimInkColor` builds a sequence per
 call); the desktop has no stroked text, so `guiOverlayLabel` draws the text at the eight
