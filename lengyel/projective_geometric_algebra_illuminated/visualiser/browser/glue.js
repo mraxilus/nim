@@ -3588,8 +3588,22 @@ function drawPoolGrid(count, capacity) {
 const svg_overlay = document.getElementById('overlay');
 // Read from marker.nim's own constants via nimOverlayMetrics.
 //   Never hand-copied literal that could drift out of sync with them.
-const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
+const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, HEIGHT_LABEL_MARKER] =
   nimOverlayMetrics();
+// Every ink's colour as CSS string, read once: name label wears its object's ink, and.
+//   `nimInkColor` builds sequence per call, which per selected object per frame was
+//   allocation per frame. Indexed by ink ordinal, `nimItemInk`'s answer.
+const COLOUR_INK_CSS = [];
+for (let ink = 0; ink < nimInkCount(); ink += 1) {
+  const rgb = nimInkColor(ink);
+  COLOUR_INK_CSS.push('rgb(' + Math.round(rgb[0] * 255) + ',' + Math.round(rgb[1] * 255) +
+    ',' + Math.round(rgb[2] * 255) + ')');
+}
+// Label's face sized to box marker.nim placed it in, so one number decides both.
+svg_overlay.style.fontSize = HEIGHT_LABEL_MARKER + 'px';
+// Outline around label's letters, in pixels: wide enough to read against object's own.
+//   disc, which label's fill matches by design.
+const WIDTH_LABEL_STROKE = 3;
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;
@@ -3671,6 +3685,24 @@ function appendMarkerPulse(slot, alpha, progress, is_touch) {
       points: points.join(' '), fill: fill, stroke: 'none',
     });
   }
+}
+
+// Write selected object's name above its marker.
+//   Filled in object's own ink and outlined in marker's stroke, so label reads as part of
+//   marker family. Where it sits is `marker.Marker.label_at`'s decision, centred here on
+//   both axes; face is `svg#overlay text`'s in shell.html.
+//   Text set on element rather than through attributes: `stageEl` strips and sets
+//   attributes only, and recycled <text> keeps last content unless overwritten.
+function appendLabel(slot, alpha) {
+  const at = nimSelectionLabelAt(slot, canvas.clientWidth, canvas.clientHeight);
+  if (at[2] < 0.5) return;
+  const element = stageEl('text', {
+    x: at[0], y: at[1], 'text-anchor': 'middle', 'dominant-baseline': 'central',
+    fill: COLOUR_INK_CSS[nimItemInk(slot)],
+    stroke: 'rgba(255,255,255,' + alpha + ')', 'stroke-width': WIDTH_LABEL_STROKE,
+    'stroke-linejoin': 'round', 'paint-order': 'stroke',
+  });
+  element.textContent = nimItemLabel(slot);
 }
 
 function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
@@ -3760,6 +3792,7 @@ function refreshOverlay(cursor) {
     if (slot === nimHoldSlot()) continue; // Its own swollen marker is drawn below.
     appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
     appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false);
+    appendLabel(slot, ALPHA_MARKER_SELECTED);
   }
 
   // Fill pressed item's own marker as press matures into selection.
@@ -3778,6 +3811,8 @@ function refreshOverlay(cursor) {
   if (slot_hold >= 0) {
     appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()), true,
       nimSwellHold(now()));
+    // Name rides up with swollen marker, once hold has selected it.
+    if (slots_selection.includes(slot_hold)) appendLabel(slot_hold, ALPHA_MARKER_SELECTED);
   }
 
   // Hover and keyboard focus wear same marker at same weight:

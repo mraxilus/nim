@@ -593,4 +593,26 @@ void guiOverlayText(float cx, float cy, float red, float green, float blue, floa
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), text);
 }
 
+// Write text centred on `cx`/`cy` in fill colour, outlined in stroke colour.
+//   Outline is text drawn again at eight one-pixel offsets beneath fill: draw list has
+//   no stroked text, and eight copies read as round outline at this size.
+//   Background list rather than menu's own, as markers are: beneath panels, over scene.
+void guiOverlayLabel(float cx, float cy, float fill_red, float fill_green, float fill_blue,
+                     float stroke_red, float stroke_green, float stroke_blue, float alpha,
+                     const char *text) {
+  const ImVec2 size = ImGui::CalcTextSize(text);
+  const ImVec2 at(cx - 0.5f * size.x, cy - 0.5f * size.y);
+  ImDrawList *list = overlayList(false);
+  const ImU32 stroke =
+      ImGui::ColorConvertFloat4ToU32(ImVec4(stroke_red, stroke_green, stroke_blue, alpha));
+  for (int dx = -1; dx <= 1; dx += 1) {
+    for (int dy = -1; dy <= 1; dy += 1) {
+      if (dx == 0 && dy == 0) continue;
+      list->AddText(ImVec2(at.x + (float)dx, at.y + (float)dy), stroke, text);
+    }
+  }
+  list->AddText(
+      at, ImGui::ColorConvertFloat4ToU32(ImVec4(fill_red, fill_green, fill_blue, 1.0f)), text);
+}
+
 } // extern "C"

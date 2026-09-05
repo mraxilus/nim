@@ -317,6 +317,13 @@ proc overlayText*(cx, cy, red, green, blue, alpha: cfloat; text: cstring)
   {.importc: "guiOverlayText", sideEffect.}
   ## Write text centred on `cx`/`cy`, measured against font loaded.
 
+proc overlayLabel*(
+  cx, cy, fill_red, fill_green, fill_blue, stroke_red, stroke_green, stroke_blue,
+  alpha: cfloat; text: cstring
+) {.importc: "guiOverlayLabel", sideEffect.}
+  ## Write text centred on `cx`/`cy` in fill colour, outlined in stroke colour at `alpha`.
+  ##   Selected object's name above its marker; on background list, as markers are.
+
 proc overlayPolyline*(
   points: ptr cfloat; count: cint; red, green, blue, alpha, thickness: cfloat;
   is_closed: cint

@@ -52,6 +52,10 @@ const
     ##   what makes selection legible.
     ##   Held tight: wide band reads as second object, and on several selected items
     ##   bands become busiest thing on screen.
+  HEIGHT_MARKER_LABEL* = 14.0
+    ## Set nominal height of selected object's name label, in pixels.
+    ##   Label's centre is placed half this above marker's top, so text box sits clear
+    ##   of outline whichever face each front-end sets; faces differ, metrics stay theirs.
   WIDTH_MARKER_COMET* = 3.5'f32
     ## Widen comet to this thickness at head, in pixels, tapering to `WIDTH_MARKER`.
     ##   Thicker than `WIDTH_MARKER`, whole of how it reads: weight separates lit part
@@ -218,6 +222,14 @@ type
       ##   `selection.PulseClock` reduce travel it cannot measure itself.
     count_run_pulse*: int ## Runs used of `pulses` below; 0 where nothing pulses.
     counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Outline points used of each run.
+    has_label*: bool ## Whether `label_at` holds place for object's name.
+      ## False where outline has no top to sit above: rails with both supports cut away.
+    label_at*: ScreenPosition ## Where name label is centred, in screen space.
+      ## `GAP_MARKER` plus half `HEIGHT_MARKER_LABEL` above outline's top at object's own
+      ## place: ring's top, upper rail at support, loop's or bands' highest point. Frame is
+      ## whole view, so its label sits just inside top edge instead.
+      ## Decided here with rest of marker so both front-ends agree by construction; each
+      ## centres its own text on it.
     pulses*: array[
       RUNS_MARKER_PULSE, array[POINTS_MARKER_PULSE, ScreenPosition]
     ] ## Short runs travelling along marker's outline, in screen space.
@@ -573,6 +585,25 @@ func clearanceTouch*(swell: float, is_touch: bool): float =
 
 #[ Point And Line ]#
 
+func placeLabelAbove(marker: var Marker, x, top: float) =
+  ## Place name label centred `GAP_MARKER` and half its height above outline's top at `x`.
+  marker.has_label = true
+  marker.label_at = ScreenPosition(
+    x: x, y: top - GAP_MARKER - 0.5*HEIGHT_MARKER_LABEL, depth: 1.0
+  )
+
+
+func placeLabelAboveTopmost(
+  marker: var Marker, points: openArray[ScreenPosition], count: int
+) =
+  ## Place name label centred above highest of `count` outline points, keeping any higher one.
+  ##   Called once per run, so bands' two runs settle on higher of their two tops.
+  for i in 0 ..< count:
+    if not marker.has_label or
+        points[i].y < marker.label_at.y + GAP_MARKER + 0.5*HEIGHT_MARKER_LABEL:
+      marker.placeLabelAbove(points[i].x, points[i].y)
+
+
 func markerRing(
   geometry: Multivector; radius: float; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; progress, clearance: float; marker: var Marker
@@ -595,6 +626,7 @@ func markerRing(
     radius: radiusPixelsAt(radius, anchor.get, scale.scale) + GAP_MARKER + clearance,
     fraction: progress,
   )
+  marker.placeLabelAbove(centre.x, centre.y - marker.radius)
   true
 
 
@@ -823,6 +855,13 @@ func markerRails(
         rails[index_side], counts[index_side], is_closed = false, origins[index_side]
       )
 
+  # Label above upper rail where it passes support, whichever side that is on screen.
+  for index_side in 0 .. 1:
+    let support = walks[index_side][1]
+    if support.isNone: continue
+    if not marker.has_label or support.get.y < marker.label_at.y + 0.5*HEIGHT_MARKER_LABEL:
+      marker.placeLabelAbove(support.get.x, support.get.y)
+
   if travel.isSome:
     # Lap both rails against one shared reach either way; see `shared`.
     var (behind, ahead) = (Inf, Inf)
@@ -942,6 +981,7 @@ proc markerLoop(
     if not are_in_front[i]: break
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
+  marker.placeLabelAboveTopmost(marker.points, marker.count_point)
   if travel.isSome:
     # Anchor at circle's angle zero, walked back through cut; see `originAfterCut`.
     let track = trackAlong(
@@ -1096,6 +1136,8 @@ proc markerBands(
         marker.are_closed_band[side], track, travel.get,
       )
   if marker.counts_band[0] == 0 and marker.counts_band[1] == 0: return
+  for side in 0 .. 1:
+    marker.placeLabelAboveTopmost(marker.points_band[side], marker.counts_band[side])
   true
 
 
@@ -1158,6 +1200,11 @@ func markerFrame(width, height: int; progress, clearance: float; marker: var Mar
   while next_corner < CORNERS_MARKER_FRAME:
     emit(turns_corner[next_corner])
     inc next_corner
+  # Inside top edge: frame is whole view, and above it is off screen.
+  marker.has_label = true
+  marker.label_at = ScreenPosition(
+    x: centre_x, y: inset + GAP_MARKER + 0.5*HEIGHT_MARKER_LABEL, depth: 1.0,
+  )
   true
 
 

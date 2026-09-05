@@ -303,6 +303,7 @@ var
   FLAT_GRID = initFlatFloats(2)
   FLAT_TARGET = initFlatFloats(3)
   FLAT_EYE = initFlatFloats(3)
+  FLAT_LABEL = initFlatFloats(3)
   FLAT_ANCHOR_WORLD = initFlatFloats(3)
   FLAT_MENU = initFlatFloats(3*(ord(DragChoice.high) + 1))
   FLAT_MENU_CENTRE = initFlatFloats(2)
@@ -826,6 +827,11 @@ proc nimInkChoosableSlots(): seq[int] {.exportc.} =
 
 
 proc nimInkName(index: cint): cstring {.exportc.} = lut_ink_to_name[Ink(index)]
+
+
+proc nimInkCount(): cint {.exportc.} = cint(ord(Ink.high) + 1)
+  ## Report how many inks palette holds, structural and assignable alike.
+  ##   Glue reads every ink's colour once at start-up, indexed by ordinal.
   ## Report Nth palette entry's name.
 
 proc nimInkColor(index: cint): seq[float32] {.exportc.} = toRgbSeq(Ink(index).colour)
@@ -911,14 +917,15 @@ proc nimDomeCorners(): seq[float32] {.exportc.} =
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
-  ## Report `[overlay_line_width, selected_alpha, hover_alpha]`.
+  ## Report `[overlay_line_width, selected_alpha, hover_alpha, label_height]`.
   ##   Browser's SVG overlay then strokes markers and drag rubber-band at weights
-  ##   desktop's `visualiser.drawMarker` does.
+  ##   desktop's `visualiser.drawMarker` does, and sizes name label's face to
+  ##   `marker.HEIGHT_MARKER_LABEL`.
   ##   Marker's size is not here: depends on shape marked, and comes back from
   ##   `nimSelectionMarker`.
   ##   Neither is orientation pulse's, shaped into outline `nimSelectionPulse` reports and
   ##   filled rather than stroked.
-  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER]
+  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, float32(HEIGHT_MARKER_LABEL)]
 
 
 proc ensurePlaced() =
@@ -1792,6 +1799,32 @@ proc nimTickPulse(now: cfloat) {.exportc.} =
   ##   same step; clock ticked per call would hand whole step to first slot asked.
   SECONDS_STEP_PULSE = CLOCK_PULSE.secondsStep(float(now))
   CLOCK_PULSE.tick(float(now))
+
+
+proc nimSelectionLabelAt(slot, width, height: cint): FlatBuffer {.exportc.} =
+  ## Report where this item's name label is centred, as `[x, y, is_shown]` over `FLAT_LABEL`.
+  ##   Place is marker's own (`marker.Marker.label_at`), so label sits above outline
+  ##   actually drawn, swollen or not. Reads marker `nimSelectionMarker` just shaped for
+  ##   this slot wherever it stands in `MARKER_SHAPED`, and shapes plain one otherwise.
+  ##   `is_shown` 0 for dead slot, no marker, or outline with no top to sit above.
+  if not SCENE.isAlive(int(slot)): return FLAT_LABEL.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+  ensureViewOverlay(int(width), int(height))
+  var held = (ref Marker)(nil)
+  if MARKER_SHAPED.isSome:
+    let stored = MARKER_SHAPED.get
+    if stored.slot == int(slot) and stored.width == int(width) and
+        stored.height == int(height):
+      held = stored.marker
+  if held == nil:
+    MARKER_SHAPED = none(ShapedMarker)
+    held = BOX_MARKER
+    if not markerFor(
+      SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCENE.radiusAt(int(slot)),
+      SCALE_OVERLAY, CAMERA, VIEW_PROJECTION_OVERLAY, int(width), int(height), held[],
+    ): return FLAT_LABEL.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+  template marker: Marker = held[]
+  if not marker.has_label: return FLAT_LABEL.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+  FLAT_LABEL.fill3(float32(marker.label_at.x), float32(marker.label_at.y), 1.0'f32)
 
 
 proc nimSelectionPulse(

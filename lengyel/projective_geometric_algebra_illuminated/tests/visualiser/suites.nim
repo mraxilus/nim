@@ -6300,7 +6300,8 @@ suite "Marker":
   proc shapedMarkerFor(
     geometry: Multivector; anchor: Option[Position]; scale: DrawExtent;
     placement: Camera; view_projection: Matrix4; width, height: int;
-    progress: float = 1.0; is_touch: bool = false; travel: Option[float] = none(float)
+    progress: float = 1.0; is_touch: bool = false; travel: Option[float] = none(float);
+    swell: float = 0.0
   ): Option[Marker] =
     ## Wrap `markerFor`'s fill-in-place shape as option, for suite's own reading.
     ##   Cases here read one answer many times over, and clarity outranks copy option
@@ -6308,7 +6309,7 @@ suite "Marker":
     var marker: Marker
     if markerFor(
       geometry, anchor, RADIUS_ITEM_DEFAULT, scale, placement, view_projection, width, height,
-      marker, progress, is_touch, travel,
+      marker, progress, is_touch, travel, swell,
     ): some(marker)
     else: none(Marker)
 
@@ -6801,6 +6802,39 @@ suite "Marker":
       )
     check ringAt(1.9).get.kind == MarkerKind.Ring
     check ringAt(0.0).isNone
+
+
+  test "every marker places its name label above its own top, clear of the outline":
+    # Where label sits is marker's decision, so both front-ends agree by construction.
+    #   Ring: above its top. Rails: above upper rail at support. Loop and bands: above
+    #   highest outline point. Frame is whole view, so label sits just inside top edge.
+    let lift = GAP_MARKER + 0.5*HEIGHT_MARKER_LABEL
+    let ring = markerOf(POINT_A).get
+    check ring.has_label
+    check ring.label_at.x =~ ring.centre.x
+    check ring.label_at.y =~ ring.centre.y - ring.radius - lift
+    # Swollen ring lifts its label by same swell.
+    let (placement, view_projection, scale) = setUp()
+    let swollen = shapedMarkerFor(
+      POINT_A, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
+      1.0, is_touch = true, travel = none(float), swell = 1.0,
+    ).get
+    check swollen.radius > ring.radius
+    check swollen.label_at.y =~ swollen.centre.y - swollen.radius - lift
+    let loop = markerOf(PLANE).get
+    check loop.kind == MarkerKind.Loop and loop.has_label
+    for i in 0 ..< loop.count_point:
+      check loop.points[i].y >= loop.label_at.y + lift - TOLERANCE_TEST
+    let rails = markerOf(LINE).get
+    check rails.kind == MarkerKind.Rails and rails.has_label
+    let support = projectToScreen(
+      view_projection, WIDTH_MARK, HEIGHT_MARK, positionAnchor(LINE).get
+    )
+    check rails.label_at.y < support.y - OFFSET_MARKER_RAIL
+    let frame = markerOf(PLANE_HORIZON).get
+    check frame.kind == MarkerKind.Frame and frame.has_label
+    check frame.label_at.x =~ 0.5*float(WIDTH_MARK)
+    check frame.label_at.y > 0.0 and frame.label_at.y < 3.0*lift
 
 
   test "a marker at full progress is exactly the marker drawn with no progress asked for":

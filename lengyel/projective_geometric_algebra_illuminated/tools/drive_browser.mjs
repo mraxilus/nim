@@ -681,6 +681,41 @@ report(
     `two -> ${centred_two.target.map((v) => v.toFixed(2))} ` +
     `(middle ${middle_two.map((v) => v.toFixed(2))})`,
 );
+// **Selected object wears its name above its marker.** Placed by marker.nim, drawn as
+// overlay <text> in object's ink outlined in marker's stroke; two selected are two
+// labels, and none selected is none. Selected through glue's own entry, which is what
+// refreshes overlay; bare `nimSelect*` above never told glue anything changed.
+await page.evaluate((slots) => {
+  selectOnly(slots[0], null);
+  toggleSelection(slots[1], null);
+}, points_pickable);
+await page.waitForTimeout(400); // Overlay is staged by frame loop, not by selection itself.
+const labelled = await page.evaluate((slots) => {
+  const texts = () => [...document.querySelectorAll('#overlay text')];
+  const two = texts().map((t) => ({
+    text: t.textContent, fill: t.getAttribute('fill'), stroke: t.getAttribute('stroke'),
+    x: Number(t.getAttribute('x')), y: Number(t.getAttribute('y')),
+  }));
+  const first = two.find((t) => t.text === nimItemLabel(slots[0]));
+  const rgb = nimInkColor(nimItemInk(slots[0]));
+  const ink = 'rgb(' + Math.round(rgb[0] * 255) + ',' + Math.round(rgb[1] * 255) + ',' +
+    Math.round(rgb[2] * 255) + ')';
+  const anchor = Array.from(nimAnchorScreen(slots[0], window.innerWidth, window.innerHeight));
+  return {
+    count_two: two.length, first, ink, anchor_y: anchor[1],
+    labels: [nimItemLabel(slots[0]), nimItemLabel(slots[1])],
+  };
+}, points_pickable);
+report(
+  'a selected object wears its name above its marker, in its ink, outlined',
+  labelled.count_two === 2 && labelled.first !== undefined &&
+    labelled.first.fill === labelled.ink && labelled.first.stroke.startsWith('rgba(255,255,255') &&
+    labelled.first.y < labelled.anchor_y,
+  `${labelled.count_two} labels for two selected (${labelled.labels.join(', ')}); ` +
+    (labelled.first ? `fill ${labelled.first.fill} (ink ${labelled.ink}), ` +
+      `y ${labelled.first.y.toFixed(0)} above anchor ${labelled.anchor_y.toFixed(0)}` :
+      'first label missing'),
+);
 report(
   'and re-centring alone never touches the reader\'s distance or orbit',
   Math.abs(centred_two.distance - camera_before_pick.distance) < 1e-6 &&
@@ -696,6 +731,15 @@ report(
 // Pinch below starts at x=400, drawer's own right edge once it is open on
 //   left, so glass is cleared before selection this check needs is made.
 await clearTheGlass();
+await page.evaluate(() => clearSelection());
+await page.waitForTimeout(400);
+const count_labels_cleared = await page.evaluate(
+  () => document.querySelectorAll('#overlay text').length,
+);
+report(
+  'and nothing selected wears no label',
+  count_labels_cleared === 0, `${count_labels_cleared} labels with nothing selected`,
+);
 await page.evaluate(() => nimSelectOnly(nimSceneSlots()[0]));
 await page.waitForTimeout(700); // Let framing ease finish before moving by hand.
 const panned_selected_before = await readCamera();

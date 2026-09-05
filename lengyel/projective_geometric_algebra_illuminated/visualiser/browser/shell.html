@@ -121,6 +121,13 @@
     height: 100%;
     pointer-events: none;
   }
+  /* Selected object's name above its marker; placed by glue.js's appendLabel.
+     Size is set there from marker.HEIGHT_MARKER_LABEL, box label is centred in. */
+  svg#overlay text {
+    font-family: var(--sans);
+    font-weight: 600;
+    user-select: none;
+  }
 
   /* One wedge of drag choice menu, styled to match `.selection-menu button` below:
      wheel and that menu are same control in two postures -- one reached by

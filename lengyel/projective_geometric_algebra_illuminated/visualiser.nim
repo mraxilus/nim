@@ -571,6 +571,15 @@ proc drawSelectionMarker(
     #   `PulseClock`.
     clock.advance(slot, marker.lap, seconds_step)
     drawMarker(marker, tint, ALPHA_MARKER_SELECTED)
+    # Name above marker, in item's own ink outlined in marker's tint.
+    #   Label storage is terminated fixed chars, read in place; see `scene.toCstring`.
+    if marker.has_label:
+      let fill = item.ink.colour
+      gui.overlayLabel(
+        cfloat(marker.label_at.x), cfloat(marker.label_at.y),
+        fill.red, fill.green, fill.blue, tint.red, tint.green, tint.blue,
+        ALPHA_MARKER_SELECTED, toCstring(item.label),
+      )
     result.inc
 
 
