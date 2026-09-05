@@ -993,23 +993,21 @@ Interaction Model
 brings the floating selection menu (right yes, left and middle no); `armingOf` says whether
 a drag opens the choice wheel. Both render paths and `help.nim` read them.
 
-**The selection menu waits for the camera to settle, then opens beside the pointer.**
-Picking eases the view so the picked object glides to the middle (`framing.offerAim`), and
-a menu opened on the click glided away from the pointer with it — confusing, since the
-pointer had not moved. A click or tap that reveals the menu now sets a pending reveal
-(`is_reveal_menu_pending` in `glue.js`, `revealSelectionMenuLater` in `panel.nim`); the
-frame loop opens it once `camera.isCarrying` is false — the ease is armed by the frame after
-the pick, so the first frame always waits — with its top-left corner `INSET_MENU_POINTER` =
-8 px from the pointer **where the pointer then is**. From then on the menu remembers its
-offset from the object's anchor (`offset_menu_selection`; `corner_menu_pointer` turned into
-it on the desktop's first layout) so orbiting carries it with the object rather than
-snapping it back to the centre, which the per-frame follow used to do. A menu opened with
+**The selection menu opens on the click, beside the pointer.** A click or tap that reveals
+the menu puts its top-left corner `INSET_MENU_POINTER` = 8 px from the pointer (`glue.js`
+`positionSelectionMenuAt`, `panel.showSelectionMenuAt`), and from then on the menu remembers
+its offset from the object's anchor (`offset_menu_selection`; `corner_menu_pointer` turned
+into it on the desktop's first layout) so orbiting carries it with the object rather than
+snapping it back to the centre, which the per-frame follow used to do. It need not wait for
+the camera: a pointer pick keeps the picked object on its pixel while the camera comes in
+(below), so nothing glides away from the pointer. Rejected: holding the menu back until the
+ease settled, which the previous round did while a pick still centred the object — a menu
+that appears a third of a second after the click reads as a missed click. A menu opened with
 no pointer (objects list, keyboard, a matured hold) sits above the anchor as before, pinned
 by its bottom middle on the desktop and lifted `LIFT_MENU_ANCHOR` = 60 px on the browser.
-Verified by driven check: a right-click 15 px off a point's anchor leaves the menu hidden
-while the camera is carrying, opens it within the inset of the unmoved pointer once
-settled, and a pan then moves menu and anchor by the same delta; the suite pins
-`isCarrying` from offer to arrival.
+Verified by driven check: a right-click 6 px off a point's anchor has the menu up two frames
+in with its corner 8 px from the pointer, and a pan then moves menu and anchor by the same
+delta.
 
 | Gesture | Does |
 |---|---|
@@ -2142,6 +2140,45 @@ closed form `radius / sin θ` as the upper bracket only) and searches the least 
 `ROUNDS_PLACEMENT_LEAST` = 5 halvings, each candidate verified at its own placement. The
 target is not part of the cut; distance grows, never shrinks; a finite pick never changes
 azimuth or elevation, and a star is turned toward only when nothing finite was picked.
+
+**A pointer pick keeps its object under the pointer and comes in to it.** The centring
+rule above is for picks with no pointer (objects list, keyboard, a shift-added group). A
+click or tap on a point or a line records a `framing.PointerPick` (slot and cursor;
+`Panel.pointer_pick`, `POINTER_PICK` in the bridge, written by `nimPickByPointer` from
+`glue.js`'s `pickByPointer` on click, tap and matured hold), which `offerAim` consumes on
+the next frame. The destination is the wheel's own move (`placementUnderPointer`): the eye
+comes in along its line to where the object stands under the pointer
+(`picking.positionUnderPointerOn`, shared with the zoom anchor and without its nearness
+filter), the angles never change, and the target lands on the sight line at the object's
+depth — so the object's pixel does not move and the turntable revolves at its depth, as
+after a wheel zoom onto it. **How far in depends on what the reader could see.** A point
+drawn at the floor dot (`DIAMETER_POINT_LEAST`, its true radius under three pixels) is
+only a place, so the camera comes in until its disc spans `FRACTION_BOX_APPROACH` = 1/4 of
+the centred box, a sixth of the frame's height — object plainly seen, neighbours still
+about it (Io picked from 168 units out arrives at 0.47 with Jupiter beside it; the whole
+box put the planet off screen). A point seen at its size, and a line, come in no further
+than the orbit distance, so a reader at working scale picking operands keeps that scale
+(the opening scene's 0.08-radius points from Home are 9 px across, and a click slides in
+without zooming); and the eye never moves further off than the object already stands. A
+plane keeps the centring rule — a surface, every pixel of its disc is on it — and so does
+a group, which has to fit, which holding one pixel cannot promise. **The ease holds the
+pixel too**: `CameraTween.anchor_held` switches `advance` from `toward` to
+`towardHoldingAnchor`, where the eye's depth to the anchor moves geometrically along the
+eye–anchor line; `toward`'s linear target and geometric distance take the eye off that
+line mid-ease (from 168 to 10 the halfway eye sits at 41 by one curve and 89 by the
+other), and the object swung off the pointer before swinging back. **A pick renews a held
+goal**: the standing offer ignores a goal it already holds, so the same object picked
+again after the wheel had taken the reader out went nowhere — the "sometimes it doesn't
+zoom in" report, reproduced on the demo: from 30 units a pick of Jupiter flew to it, but
+after a wheel out to 168 a pick of a moon moved the target onto it and left the distance
+at 168. `aimAt`'s `is_renewed` re-arms the ease for a pointer pick whatever the tween
+holds. Verified by suite (the pixel stays within 0.01 px through five steps of the ease
+and the arrival distance equals the fit; a near point and a line keep the orbit distance;
+a plane and a pair hold no anchor; a re-pick after `abandon` and a dolly re-arms) and by
+driven check on the browser (from 45 units a right-click brings the eye to 1.21 with the
+anchor drifting 0.00 px in flight and settled and the target at the object's depth; a
+second pick after wheeling out to 68 comes in to 1.21 again). Both front-ends rendered and
+looked at.
 
 *Checked.* Verified on the shipped page, seven selections × nine starting orientations: worst
 picked point outside the box 0.0 px (323.9 when watching one object); total pan over 63 trials
