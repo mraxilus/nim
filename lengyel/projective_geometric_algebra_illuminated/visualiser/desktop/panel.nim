@@ -203,9 +203,6 @@ type
       ## always arity selection implies.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
-    is_algebra_shown*: bool ## Whether algebra's debug layer is drawn over scene.
-      ## Every multivector frame computed, in true form.
-      ## Off by default; see `algebra_view`.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
     is_undo_requested*, is_redo_requested*: bool ## Whether key asked to step timeline.
       ## Set by key handler and consumed right after layout.
@@ -234,7 +231,6 @@ func initPanel*(path_export: string): Panel =
   ## Construct panel with world furniture shown and export aimed at `path_export`.
   result.is_grid_shown = true
   result.is_axes_shown = true
-  result.is_algebra_shown = false
   result.is_vsync_enabled = true
   toChars(path_export, result.path_export)
   toChars("scene.rgascene", result.path_scene)
@@ -638,9 +634,6 @@ proc layoutTopBar*(panel: var Panel, scene: var Scene, now: float) =
   discard gui.checkbox("grid", addr panel.is_grid_shown)
   gui.tooltip("Toggle the reference grid at z = 0.")
   gui.sameLine()
-  # Name it "debug", matching browser chip and diagnostics tree's "debug overlay" row.
-  #   Control called algebra reads as subject of whole app.
-  discard gui.checkbox("debug", addr panel.is_algebra_shown)
   gui.tooltip(
     "Draw every multivector this frame computed, in its true form -- a plane as the " &
     "infinite lattice it is, not the disc that stands for one."

@@ -940,7 +940,10 @@ func removeItem*(scene: var Scene, slot: int) =
 ##   |---------|-------------------------------------------------------------------|
 ##   | Version | Read as                                                           |
 ##   |---------|-------------------------------------------------------------------|
-##   | 5       | Exactly. Each item carries shines byte after its radius.          |
+##   | 6       | Exactly.                                                          |
+##   | 5       | Exactly, except palette had one more structural slot, `Algebra`,  |
+##   |         |   at ordinal 7; every hue past it moves one down; see             |
+##   |         |   `upgradedFrom5`.                                                |
 ##   | 4       | Exactly, except nothing shines, so every point draws flat; see    |
 ##   |         |   `upgradedFrom4`.                                                |
 ##   | 3       | Exactly, except every item is drawn at `RADIUS_ITEM_DEFAULT`, size |
@@ -963,7 +966,7 @@ func removeItem*(scene: var Scene, slot: int) =
 const
   MAGIC_SCENE* = "RGAS"
     ## Open every `.rgascene` file with these four bytes.
-  VERSION_SCENE* = 5'u8
+  VERSION_SCENE* = 6'u8
     ## Stamp format version this build writes.
     ##   Every version down to `VERSION_SCENE_LEAST` is still read; see table above.
     ##   Version 2 moved every stored ink ordinal, when `Ink` gained reserved `Invalid`
@@ -1012,9 +1015,8 @@ const
     ## Record where categorical hues began in `Ink` version-1 file was written under.
     ##   That palette ran `Backdrop, AxisX, AxisY, AxisZ, Grid, Guide, Outline` then eight
     ##   hues `Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise`.
-    ##   Seven structural slots are unchanged; every structural slot reserved after them,
-    ##   i.e. `Invalid`, then `Algebra`, moves hues along, so fold reads today's start
-    ##   through `inkCycled`.
+    ##   Seven structural slots are unchanged; structural slot reserved after them,
+    ##   `Invalid`, moves hues along, so fold reads today's start through `inkCycled`.
     ##   Recorded as number because enum it indexes no longer exists.
   ORDINAL_INK_HIGH_V1* = 14
     ## Record last palette slot version-1 file could name, `Cerise`'s.
@@ -1050,6 +1052,12 @@ type ItemSaved* = object
   shines*: bool ## Whether item lights others; false before version 5.
 
 
+const ORDINAL_INK_ALGEBRA_V5 = 7
+  ## Record structural slot `Algebra`, debug layer's hue, held in palette up to version 5.
+  ##   Sat after `Outline` and before `Invalid`, so every slot past it is one down today.
+  ##   Recorded as number because enum entry it indexes no longer exists.
+
+
 func upgradedFrom1(item: ItemSaved): Option[ItemSaved] =
   ## Carry one item from what version 1 meant to what version 2 means.
   ##   None where version 1 could not have written it.
@@ -1064,7 +1072,10 @@ func upgradedFrom1(item: ItemSaved): Option[ItemSaved] =
   if item.ink_ordinal < 0 or item.ink_ordinal > ORDINAL_INK_HIGH_V1: return none(ItemSaved)
   var carried = item
   if carried.ink_ordinal >= ORDINAL_INK_CATEGORICAL_V1:
-    carried.ink_ordinal = ord(inkCycled(carried.ink_ordinal - ORDINAL_INK_CATEGORICAL_V1))
+    # Land in version 2's palette, not today's: hues there sat one past `Algebra`.
+    #   `upgradedFrom5` takes them down, as it does for every file of versions 2 to 5.
+    carried.ink_ordinal =
+      ord(inkCycled(carried.ink_ordinal - ORDINAL_INK_CATEGORICAL_V1)) + 1
   some(carried)
 
 
@@ -1093,6 +1104,17 @@ func upgradedFrom4(item: ItemSaved): Option[ItemSaved] =
   some(carried)
 
 
+func upgradedFrom5(item: ItemSaved): Option[ItemSaved] =
+  ## Carry one item from what version 5 meant to what version 6 means.
+  ##   Version 6 dropped `Algebra` from palette; hues past it move one down.
+  ##   None for item wearing it: structural slot no build ever assigned to object, so
+  ##   byte saying so is corrupt, refused as every other unwritable byte is.
+  if item.ink_ordinal == ORDINAL_INK_ALGEBRA_V5: return none(ItemSaved)
+  var carried = item
+  if carried.ink_ordinal > ORDINAL_INK_ALGEBRA_V5: dec carried.ink_ordinal
+  some(carried)
+
+
 func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
   ## Carry item read from file of `version` up to shape this build works in.
   ##   One boundary at time; none where no version could have written it.
@@ -1108,6 +1130,7 @@ func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
       of 2'u8: carried.upgradedFrom2
       of 3'u8: carried.upgradedFrom3
       of 4'u8: carried.upgradedFrom4
+      of 5'u8: carried.upgradedFrom5
       else: none(ItemSaved) # Unreachable: `readsSceneVersion` bounds walk above.
     if stepped.isNone: return none(ItemSaved)
     carried = stepped.get

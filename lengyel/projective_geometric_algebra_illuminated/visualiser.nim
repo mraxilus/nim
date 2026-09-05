@@ -104,7 +104,7 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 import ./pga
 import ./visualiser/core/[
   lighting,
-  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  boundary, camera, format, framing, help, history,
   interaction, marker, orrery, picking,
   scene, selection, storyboard, tessellate, timings,
 ]
@@ -199,8 +199,6 @@ static:
 # Hold vertex storage at module scope, far too large for stack frame.
 var
   MESHES: MeshSet ## Every scene object, excluding world furniture below.
-  TRACE: AlgebraTrace ## Scratch debug layer records into, reused every frame.
-    ## `ITEMS_MAX` entries long; see `algebra_view.addFrameTrace`.
   SETTINGS_FURNITURE_HELD = none(SettingsFurniture)
     ## Hold what `MESHES_FURNITURE` stands for, or none before first frame.
     ##   Still camera then keeps grid it has rather than rebuilding it every frame.
@@ -451,15 +449,6 @@ proc assembleMeshes(
     discard MESHES.addObject(
       scratch[0], item.geometry, tint, scale, progress, item.anchorOverride, bounds = bounds,
       radius = item.radius, light = LIGHTS.lights[slot],
-    )
-
-  # Emit algebra's own layer, over everything.
-  #   Every multivector this frame computed, drawn as what it is;
-  #   `algebra_view.addFrameTrace`, shared with browser; see `algebra_trace`.
-  if panel.is_algebra_shown:
-    MESHES.addFrameTrace(
-      scratch[0], TRACE, scene, camera, staged, interaction.cursor, scale,
-      width = width, height = height,
     )
 
   panel.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0

@@ -1817,8 +1817,8 @@ const summed = await page.evaluate(() => {
   const runs = [];
   for (let i = 0; i < 30; i += 1) {
     nimSetCameraAzimuth(0.01 * i); // Rebuild furniture, so sum covers real work.
-    const f = nimBuildFrame(1200 / 900, performance.now() / 1000, 900, true, true, false);
-    const children = f.ms_camera + f.ms_furniture + f.ms_scene + f.ms_algebra +
+    const f = nimBuildFrame(1200 / 900, performance.now() / 1000, 900, true, true);
+    const children = f.ms_camera + f.ms_furniture + f.ms_scene +
       f.ms_matrix + f.ms_flatten + f.ms_unaccounted;
     runs.push({ build: f.ms_build, children, placing: f.ms_placing, emitting: f.ms_emitting });
   }
@@ -2123,61 +2123,6 @@ report(
   `the row reads "${smoothed.text}" over ${smoothed.frames} frames`,
 );
 
-// **Algebra's own layer draws what picture only stands for.** Ordinary picture
-// draws plane as disc of fixed radius, because infinite surface would bury
-// everything; switched on, debug layer draws it as infinite lattice it actually is,
-// reaching furniture's own extent instead of `EXTENT_PLANE`. It also draws geometry
-// scene does not contain at all -- camera's sight axis, its near plane, ray under
-// cursor -- so toggle has to change more than tint.
-const layered = await page.evaluate(async () => {
-  const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  const chip = document.getElementById('toggle-algebra');
-  const count = () => nimBuildFrame(1.4, 2.0, 700, true, true, chip.classList.contains('on'));
-  const off = count();
-  const lit_off = chip.classList.contains('on');
-  chip.click();
-  await settle();
-  const on = count();
-  return {
-    lit_off, lit_on: chip.classList.contains('on'),
-    // Ribbons: lattice is drawn as ribbons, as every line in this build is.
-    ribbons_off: off.ribbon_verts.length, ribbons_on: on.ribbon_verts.length,
-    ms_off: off.ms_algebra, ms_on: on.ms_algebra,
-  };
-});
-report(
-  'the algebra layer is off until asked for, and then draws more than the scene',
-  !layered.lit_off && layered.lit_on &&
-    layered.ms_off === 0 && layered.ms_on > 0 &&
-    layered.ribbons_on > layered.ribbons_off,
-  `off: ${layered.ribbons_off} ribbon vertices, ${layered.ms_off} ms; ` +
-    `on: ${layered.ribbons_on}, ${layered.ms_on.toFixed(1)} ms`,
-);
-
-// **Plane is drawn infinite, not as its disc.** Lattice reaches furniture's own
-// extent, which is far outside fixed radius disc stands at -- so furthest thing
-// layer draws has to lie well beyond `EXTENT_PLANE`, or plane is still disc.
-const reached = await page.evaluate((EXTENT_PLANE_DRIVE) => {
-  const data = nimBuildFrame(1.4, 2.0, 700, false, false, true);
-  // Furniture off, so every vertex counted here belongs to scene and layer over it.
-  let furthest = 0;
-  const v = data.ribbon_verts;
-  // Sixteen floats record now widening and fog both run in shaders: tail.
-  //   xyz, head xyz, width, fog, then two tints. Both ends are positions lattice
-  //   actually reaches.
-  for (let i = 0; i < v.length; i += 16) {
-    furthest = Math.max(furthest,
-      Math.hypot(v[i], v[i + 1], v[i + 2]), Math.hypot(v[i + 3], v[i + 4], v[i + 5]));
-  }
-  return { furthest, extent_plane: EXTENT_PLANE_DRIVE };
-}, 8.0); // `mesh.EXTENT_PLANE`, fixed radius plane's disc stands at.
-report(
-  'a plane is drawn as the infinite thing it is, not as the disc that stands for one',
-  reached.furthest > 4*reached.extent_plane,
-  `furthest lattice vertex ${reached.furthest.toFixed(1)} units out, ` +
-    `against a disc of ${reached.extent_plane}`,
-);
-
 // **Scene phase, broken down by kind of object each millisecond went to.**
 // kinds differ by two orders of magnitude -- point is one vertex, plane rim of
 // ribbons each carrying its own join -- so reader asking why scene is slow needs
@@ -2414,7 +2359,6 @@ const BANDS_PERF = {
   marker_pair_ms: 4, // Worst live shape; repaired ~1.2 ms, per-sample sums ~3.2.
   grid_moving_ms: 20, // Repaired 8.7 ms; per-boundary fade sampling measured 26.1.
   emitting_moving_ms: 4.5, // Repaired ~1.2 ms; CPU ribbon/fan expansion measured 6.3.
-  debug_layer_ms: 12, // Repaired 4.7 ms; per-piece lattice fades measured 18.5.
 };
 
 // Hover pick must stay off copy paths:
@@ -2508,26 +2452,6 @@ reportWithin(
 reportWithin(
   'the CPU emit stays a copy of records, not an expansion', pin_grid.emitting, 0,
   BANDS_PERF.emitting_moving_ms, 'ms median',
-);
-
-// Debug layer must keep riding shared lattice machinery:
-//   traced plane is lattice lines at one record each, not fade pieces, and trace is read by slot.
-const pin_debug = await page.evaluate(() => {
-  const canvas = document.getElementById('gl');
-  const aspect = canvas.width / canvas.height;
-  const layer = [];
-  for (let i = 0; i < 15; i += 1) {
-    const data = nimBuildFrame(
-      aspect, performance.now() / 1000, canvas.height, true, true, true,
-    );
-    layer.push(data.ms_algebra);
-  }
-  layer.sort((a, b) => a - b);
-  return layer[7];
-});
-reportWithin(
-  'the debug layer rides the shared lattice machinery', pin_debug, 0,
-  BANDS_PERF.debug_layer_ms, 'ms median',
 );
 
 // Overlay must reuse its own SVG elements rather than rebuilding layer:
@@ -2846,10 +2770,6 @@ report(
 // halves are held here, and second is checked through **drawn pixels** rather than
 // through flag: hold that released but drew old records would pass flag check.
 await page.evaluate(() => {
-  // Switch debug layer off, since it refuses hold outright and earlier check left it on.
-  //   It draws cursor's own ray.
-  const chip = document.getElementById('toggle-algebra');
-  if (chip.classList.contains('on')) chip.click();
   nimSelectClear();
   document.getElementById('gl').focus();
   window.__hold = { held: 0, built: 0 };
@@ -3393,10 +3313,10 @@ const ms_after_edit = await page.evaluate(() => {
       model, 'placed', nimDefaultInk(), nimDefaultRadius(), false, performance.now() / 1000,
     );
     const started = performance.now();
-    nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, false, true);
+    nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, true);
     times.push(performance.now() - started);
     nimRemoveItem(slot);
-    nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, false, true);
+    nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, true);
   }
   nimSelectClear();
   times.sort((a, b) => a - b);
@@ -3411,16 +3331,12 @@ report(
 // **Undo made while frame is held is drawn.** Restored snapshot carried its own
 // revision, and bump after it landed on revision of very edit being undone, so
 // hold kept last frame's meshes: undone object stayed on screen until camera
-// moved. Hold is engaged first, on purpose -- fault only shows once it has, and
-// it cannot engage under debug layer, which page's own loop is still drawing
-// from check far above: switched off here rather than fought.
+// moved. Hold is engaged first, on purpose -- fault only shows once it has.
 const undo_drawn = await page.evaluate(async () => {
-  const chip = document.getElementById('toggle-algebra');
-  if (chip.classList.contains('on')) chip.click();
   const canvas = document.getElementById('gl');
   const aspect = canvas.width / canvas.height;
   const build = () =>
-    nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, false, true);
+    nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, true);
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   const state = (f) => ({
@@ -3477,15 +3393,6 @@ reportWithin(
 // walks of all 64 slots, marking overlay, packing view-projection -- belongs to no
 // kind and gets *larger* with 64 objects, not smaller. Measured over three runs, worst
 // excess on this side was 0.00 ms; lower bound is one that occasionally moves.
-// Debug layer has been on since check that switched it on, some way above, and
-//   lattice it draws is ribbons -- about 1,650 records of them, which would drown
-//   record accounting below in geometry that has nothing to do with plane's rim. Off for
-//   this window, since what is measured here is ordinary picture.
-await page.evaluate(() => {
-  const chip = document.getElementById('toggle-algebra');
-  if (chip.classList.contains('on')) chip.click();
-});
-await page.waitForTimeout(200);
 // Fill free slots first, so drag below meets full scene.
 //   Construction gesture released on full scene must refuse through `isFull` rather
 //   than take whole page down with assertion; every panel path guards it, and gesture

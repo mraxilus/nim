@@ -1042,14 +1042,6 @@
       <div class="toggles">
         <button id="toggle-axes" class="on" type="button">axes</button>
         <button id="toggle-grid" class="on" type="button">grid</button>
-        <!-- Debug layer: every multivector frame computed, drawn as what
-             it is -- plane as infinite lattice it actually is, not disc that
-             stands for one. Off by default; picture is what build is for, and this
-             is what reader switches to when they want to see library instead.
-             Labelled "debug", matching diagnostics tree's own "debug overlay" row:
-             chip called algebra read as subject of whole page, not as
-             optional wireframe it switches. Element id stays, as wiring not label. -->
-        <button id="toggle-algebra" type="button">debug</button>
       </div>
       <button class="brand" id="button-menu" type="button" aria-label="menu">
         <span aria-hidden="true">&#9776;</span>
@@ -1312,15 +1304,6 @@
                   ><b id="diagnostic-selected">&mdash;</b></div>
               </div>
             </div>
-            <!-- Wireframe layer, when it is switched on: lattice per plane is not
-                 cheap and panel should say so rather than fold it into scene it is
-                 drawn over. Zero while layer is off.
-                 Named "debug overlay" and not "algebra": with two sides of
-                 boundary now reported below, row called algebra that meant "optional
-                 wireframe" would be read as algebra's cost and is not. -->
-            <div class="diagnostic-line"><span>debug overlay<span
-              class="diagnostic-where">algebra_view</span></span
-              ><b id="diagnostic-algebra">&mdash;</b></div>
             <div class="diagnostic-line"><span>view matrix<span
               class="diagnostic-where">camera</span></span
               ><b id="diagnostic-matrix">&mdash;</b></div>

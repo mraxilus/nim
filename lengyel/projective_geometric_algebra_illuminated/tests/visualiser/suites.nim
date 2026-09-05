@@ -2169,6 +2169,11 @@ suite "Scene":
     check scene.revision > revision_edit
 
 
+  # Where versions 2 to 5 wrote `Rose`: one past today's, palette then holding retired.
+  #   structural slot `Algebra` at ordinal 7 before every hue; see `scene.upgradedFrom5`.
+  const ORDINAL_INK_ROSE_V5 = ord(Ink.Rose) + 1
+  const ORDINAL_INK_ALGEBRA_V5 = 7
+
   proc savedWith(ordinal: int, radius = RADIUS_ITEM_DEFAULT, shines = false): ItemSaved =
     ## Build item differing from its neighbours only in palette slot, radius and shine.
     ##   Three fields version boundaries have ever changed; radius and shine default,
@@ -2205,25 +2210,39 @@ suite "Scene":
     # Version 3 wrote no radius, so whatever reader had in field is overwritten, not.
     #   trusted: parser passing garbage or zero there must still land on default.
     for stale in [0.0, -1.0, 7.0, NaN]:
-      let carried = itemUpgraded(savedWith(ord(Ink.Rose), stale), 3'u8)
+      let carried = itemUpgraded(savedWith(ORDINAL_INK_ROSE_V5, stale), 3'u8)
       check carried.isSome
       check carried.get.radius == RADIUS_ITEM_DEFAULT
       check carried.get.ink_ordinal == ord(Ink.Rose)
     # Same for every older version: radius joins chain at its boundary, once.
     for version in VERSION_SCENE_LEAST ..< VERSION_SCENE_RADIUS:
       check not hasRadius(version)
-      check itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1, 0.0), version).get.radius ==
-        RADIUS_ITEM_DEFAULT
+      # First hue in each version's own palette; see `ORDINAL_INK_ROSE_V5`.
+      let ordinal = if version == 1'u8: ORDINAL_INK_CATEGORICAL_V1 else: ORDINAL_INK_ROSE_V5
+      check itemUpgraded(savedWith(ordinal, 0.0), version).get.radius == RADIUS_ITEM_DEFAULT
     check hasRadius(VERSION_SCENE)
 
 
   test "a version-4 item is given no sun, whatever the parser had in the field":
     for version in VERSION_SCENE_LEAST ..< VERSION_SCENE_SHINE:
       check not hasShine(version)
-      let carried = itemUpgraded(savedWith(ord(Ink.Rose), shines = true), version)
+      let carried = itemUpgraded(savedWith(ORDINAL_INK_ROSE_V5, shines = true), version)
       check carried.isSome
       check not carried.get.shines
     check hasShine(VERSION_SCENE)
+
+
+  test "a version-5 hue past the retired debug slot moves one down, and the slot is refused":
+    # Version 6 dropped structural `Algebra` from palette; ordinals past it shift, ones.
+    #   before it stand, and byte naming slot no build ever assigned is corrupt.
+    for ordinal in 0 ..< ORDINAL_INK_ALGEBRA_V5:
+      check itemUpgraded(savedWith(ordinal), 5'u8).get.ink_ordinal == ordinal
+    check itemUpgraded(savedWith(ORDINAL_INK_ALGEBRA_V5), 5'u8).isNone
+    for ordinal in ORDINAL_INK_ALGEBRA_V5 + 1 .. ord(Ink.high) + 1:
+      check itemUpgraded(savedWith(ordinal), 5'u8).get.ink_ordinal == ordinal - 1
+    check itemUpgraded(savedWith(ORDINAL_INK_ROSE_V5), 5'u8).get.ink_ordinal == ord(Ink.Rose)
+    # Past what version 5 could name is refused, as ever.
+    check itemUpgraded(savedWith(ord(Ink.high) + 2), 5'u8).isNone
 
 
   test "a version-2 item needs nothing doing to it but is walked all the same":
@@ -2231,13 +2250,17 @@ suite "Scene":
     #   fields come through untouched -- and must not be folded by version-1 step.
     #   Compared field by field rather than through `==`, which `Multivector` makes
     #   compile error on purpose; geometry is checked with approximate operator.
-    for ordinal in ord(Ink.low) .. ord(Ink.high):
+    # Palette ordinals are version 5's, one past today's beyond retired slot, so.
+    #   both walks land on same hue only where they start from what each wrote.
+    for ordinal in ord(Ink.low) .. ord(Ink.high) + 1:
+      if ordinal == ORDINAL_INK_ALGEBRA_V5: continue
       let
+        today = if ordinal > ORDINAL_INK_ALGEBRA_V5: ordinal - 1 else: ordinal
         from_two = itemUpgraded(savedWith(ordinal), 2'u8)
-        from_three = itemUpgraded(savedWith(ordinal), VERSION_SCENE)
+        from_three = itemUpgraded(savedWith(today), VERSION_SCENE)
       check from_two.isSome
       check from_three.isSome
-      check from_two.get.ink_ordinal == ordinal
+      check from_two.get.ink_ordinal == today
       check from_two.get.ink_ordinal == from_three.get.ink_ordinal
       check from_two.get.is_visible == from_three.get.is_visible
       check from_two.get.label == from_three.get.label
@@ -2281,7 +2304,12 @@ suite "Scene":
     check itemUpgraded(savedWith(ord(Ink.Rose)), VERSION_SCENE + 1'u8).isNone
     for version in VERSION_SCENE_LEAST .. VERSION_SCENE:
       check readsSceneVersion(version)
-      check itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1), version).isSome
+      # First hue in each version's own palette; see `ORDINAL_INK_ROSE_V5`.
+      let ordinal =
+        if version == 1'u8: ORDINAL_INK_CATEGORICAL_V1
+        elif version < VERSION_SCENE: ORDINAL_INK_ROSE_V5
+        else: ord(Ink.Rose)
+      check itemUpgraded(savedWith(ordinal), version).isSome
 
 
   test "bornReplaying staggers an arrival in order and never runs past the cap":
@@ -2541,15 +2569,17 @@ suite "Scene":
       check not scene[2].isVisible
 
 
-    test "a version-2 file is read under today's palette, unshifted":
+    test "a version-2 file's hues come down past the retired debug slot, nothing folded":
       # Version 2 and 3 differ only in what item *sequence* promises, so version-2.
-      #   file's ordinals are today's and must not be folded through version-1 rule.
+      #   file's ordinals must not be folded through version-1 rule; they are version
+      #   5's, one past today's beyond retired `Algebra` slot, and `upgradedFrom5` alone
+      #   takes them down.
       var scene = initScene()
       let path = getTempDir() / "visualiser_suite_scene_v2.rgascene"
       writeFile(path, sceneFileOf(2'u8, @[
         (ord(Ink.Grid), true, "structural", POINTS[0]),
-        (ord(Ink.Rose), true, "first hue", POINTS[1]),
-        (ord(Ink.Cobalt), false, "last hue", POINTS[2]),
+        (ord(Ink.Rose) + 1, true, "first hue", POINTS[1]),
+        (ord(Ink.Cobalt) + 1, false, "last hue", POINTS[2]),
       ]))
       defer: removeFile(path)
 

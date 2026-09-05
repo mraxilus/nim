@@ -273,10 +273,6 @@ type
     Outline, ## Selection outline drawn around highlighted object.
       ## Never cycled to, only drawn where caller names slot as highlighted (see
       ## `renderer.drawOutline`).
-    Algebra, ## Debug layer drawing multivectors frame computed, in true form.
-      ## See `algebra_trace`. Structural and not assignable: entry in it is *algebra's*
-      ## own geometry, so it is screened against every assignable slot and `Invalid` at
-      ## assignable floors by `tools/check_palette`.
     Invalid, ## Reserved for object that is wrong rather than merely coloured.
       ## Magenta no object may be assigned, so seeing it always means something is
       ## invalid.
@@ -344,7 +340,7 @@ type
     head_x*, head_y*, head_z*: float32
     width*: float32
     fog*: float32 ## Whether fragment shader fades this record by distance from eye.
-      ## 1 for world furniture and debug lattices, 0 otherwise.
+      ## 1 for world furniture, 0 otherwise.
       ## `alphaGridFade` states fade; flag on record lets fogged and unfogged ribbons
       ## share one buffer in any order.
     tail_red*, tail_green*, tail_blue*, tail_alpha*: float32
@@ -523,7 +519,7 @@ func alphaGridFade*(radius, radius_fade_start, radius_end: float): float =
   ##   Past fade start grid cells crowd into few pixels under perspective, and fading
   ##   them trades aliasing noise for clean horizon.
   ##   `radius` is distance from eye, bounds from `fogFurnitureFor`.
-  ##     One schedule for all furniture (grid, axes, debug lattices), so reference ends
+  ##     One schedule for all furniture (grid, axes), so reference ends
   ##     at one horizon.
   ##   Reference fog half of both ribbon fragment shaders is held to.
   ##     Change to this, GLSL 3.30 in `renderer.nim` or WebGL source in `glue.js` is not
@@ -606,7 +602,6 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
-  Ink.Algebra: Rgba(red: 0.000, green: 0.729, blue: 0.780, alpha: 1.0),
   Ink.Invalid: Rgba(red: 0.612, green: 0.000, blue: 0.722, alpha: 1.0),
   Ink.Rose: Rgba(red: 0.690, green: 0.090, blue: 0.373, alpha: 1.0),
   Ink.Copper: Rgba(red: 0.812, green: 0.451, blue: 0.275, alpha: 1.0),

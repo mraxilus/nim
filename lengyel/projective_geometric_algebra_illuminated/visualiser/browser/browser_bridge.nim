@@ -35,7 +35,7 @@ import std/[options, strformat]
 import ../../pga
 import ../core/[
   lighting,
-  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  boundary, camera, format, framing, help, history,
   interaction, marker, orrery, picking, ramp, scene, selection, storyboard, tessellate,
   timings,
 ]
@@ -160,27 +160,22 @@ type SettingsScene = tuple
   ##     costing one rebuilt frame when reader switches grid off.
   ##   `aspect` is here because view-projection matrix reads it and furniture does not.
   ##   `revision` is scene's own; see `scene.revision`.
-  ##   Three things are guards instead; see `nimBuildFrame`.
-  ##     Ghost or drag preview standing (moves with pointer), debug layer on (draws
-  ##     cursor's ray), appear animation running.
+  ##   Two things are guards instead; see `nimBuildFrame`.
+  ##     Ghost or drag preview standing (moves with pointer), appear animation running.
   furniture: SettingsFurniture
   aspect: float
   revision: int
   revision_selection: int ## `selection.revision`, never selection itself.
     ## Comparing and copying `ITEMS_MAX` ints per frame is capacity-scaled work for scene
     ## of five.
-  is_algebra_shown: bool
   is_culling: bool ## Whether points outside view are skipped; see `IS_CULLING`.
 
 
 var
   SCENE: Scene
   CAMERA: Camera
-  TRACE: AlgebraTrace ## Scratch debug layer records into.
-    ## Held and reused rather than declared per frame, being `ITEMS_MAX` entries long; see
-    ## `algebra_view.addFrameTrace`.
-  MESHES_FURNITURE, MESHES: MeshSet ## Meshes held at module scope and reused every
-    ## frame via `clearMeshes`.
+  MESHES_FURNITURE, MESHES: MeshSet ## Hold meshes at module scope, reused every frame.
+    ## Cleared through `clearMeshes` rather than declared per frame.
     ## `clearMeshes` resets each mesh's `count_vertices`, not storage, mirroring
     ## `visualiser.nim`'s `MESHES`/`MESHES_FURNITURE`.
     ## As `nimBuildFrame` locals, each call reallocates and zero-fills whole fixed
@@ -1988,8 +1983,6 @@ type FrameData = object
     ## ordinary session.
     ##   Furniture is moving frame's largest phase on JS backend (diagnostics scenery row
     ##   is live figure), so still frame skipping it does most of frame less work.
-  ms_algebra: float32 ## What debug layer cost, beside `ms_scene` rather than inside it.
-    ##   Every multivector frame recorded, drawn in true form; zero where layer is off.
   ms_build, ms_furniture, ms_scene, ms_flatten: float32
     ## Record what this frame's assembly cost, in milliseconds.
     ##   Whole of `nimBuildFrame`, and its three phases: furniture, scene's objects (ghost
@@ -2125,7 +2118,7 @@ proc chargeCulled(cost: var SceneCost) =
 
 proc nimBuildFrame(
   aspect, now: cfloat; height_pixels: cint;
-  is_axes_shown, is_grid_shown, is_algebra_shown: bool; is_tally_skipped: bool = false
+  is_axes_shown, is_grid_shown: bool; is_tally_skipped: bool = false
 ): FrameData {.exportc.} =
   ## Tessellate every visible object in live scene, at camera's current placement.
   ##   Through same `mesh.addObject` dispatch and `camera` transforms desktop draws
@@ -2205,20 +2198,18 @@ proc nimBuildFrame(
   # Hold scene where settings match last frame's, one layer out from furniture's hold.
   #   Frame whose settings match tessellates same records, so keeps them, flattens and
   #   uploads together: whole scene phase.
-  #   Three states refuse hold outright rather than being encoded: ghost or preview
-  #   follows pointer; debug layer draws cursor's ray; item inside appear animation is
-  #   drawn differently every frame.
+  #   Two states refuse hold outright rather than being encoded: ghost or preview
+  #   follows pointer; item inside appear animation is drawn differently every frame.
   #   Cost of refusing is one rebuilt frame; cost of holding wrongly is frozen picture.
   let settings_scene: SettingsScene = (
     furniture: settings_furniture,
     aspect: float(aspect),
     revision: SCENE.revision,
     revision_selection: SELECTION.revision,
-    is_algebra_shown: is_algebra_shown,
     is_culling: IS_CULLING,
   )
   let is_scene_settled =
-    ghost.isNone and INTERACTION.preview.isNone and not is_algebra_shown and
+    ghost.isNone and INTERACTION.preview.isNone and
       float(now) >= BORN_LAST + ANIMATION_SECONDS
   let is_scene_held =
     is_scene_settled and SETTINGS_SCENE_HELD.isSome and SETTINGS_SCENE_HELD.get == settings_scene
@@ -2228,9 +2219,7 @@ proc nimBuildFrame(
   # Declare tally out here because frame reports it either way.
   #   On held frame times are zero and counts are last frame's, still what scene holds.
   var cost: SceneCost
-  var
-    ms_before_algebra = ms_after_furniture
-    ms_after_algebra = ms_after_furniture
+  var ms_after_scene = ms_after_furniture
   if is_scene_held:
     cost.count_points = COUNTS_SCENE.count_points
     cost.count_lines = COUNTS_SCENE.count_lines
@@ -2331,16 +2320,7 @@ proc nimBuildFrame(
         PLACEMENTS[slot].kind, is_sky = false, is_ghost = false, is_selected = true
       )
 
-    # Draw algebra's own layer over scene it explains.
-    #   Every multivector this frame derived, in true form; `algebra_view.addFrameTrace`,
-    #   shared with desktop.
-    ms_before_algebra = performanceNow()
-    if is_algebra_shown:
-      MESHES.addFrameTrace(
-        SCRATCH, TRACE, SCENE, CAMERA, ghost, INTERACTION.cursor, scale,
-        width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
-      )
-    ms_after_algebra = performanceNow()
+    ms_after_scene = performanceNow()
     COUNTS_SCENE = cost
 
   let vp = CAMERA.initMatrixViewProjection(float(aspect))
@@ -2410,19 +2390,17 @@ proc nimBuildFrame(
     ms_furniture: float32(ms_after_furniture - ms_before_furniture),
     # Take scene phase as everything between furniture and flatten.
     #   Clearing, both passes, ghost and preview, overlay marking.
-    ms_algebra: float32(ms_after_algebra - ms_before_algebra),
-    ms_scene: float32(ms_before_algebra - ms_after_furniture),
+    ms_scene: float32(ms_after_scene - ms_after_furniture),
     ms_flatten: float32(ms_done - ms_before_flatten),
     ms_camera: float32(ms_after_camera - ms_entered),
-    ms_matrix: float32(ms_after_matrix - ms_after_algebra),
+    ms_matrix: float32(ms_after_matrix - ms_after_scene),
     # Report what named phases still do not cover.
     #   Never negative: clock going backwards is coarsened timer, not phase running for
     #   less than nothing.
     ms_unaccounted: float32(max(0.0,
       (ms_done - ms_entered) - (ms_after_camera - ms_entered) -
-      (ms_after_furniture - ms_before_furniture) - (ms_before_algebra - ms_after_furniture) -
-      (ms_after_algebra - ms_before_algebra) - (ms_after_matrix - ms_after_algebra) -
-      (ms_done - ms_before_flatten))),
+      (ms_after_furniture - ms_before_furniture) - (ms_after_scene - ms_after_furniture) -
+      (ms_after_matrix - ms_after_scene) - (ms_done - ms_before_flatten))),
     ms_placing: float32(spentOn(Side.Placing)),
     ms_emitting: float32(spentOn(Side.Emitting)),
     ms_hover_pick: float32(recordLastFrame().ms_hover_pick),

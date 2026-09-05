@@ -135,8 +135,6 @@ type
       ## replacement of camera value: `home` builds fresh camera carrying zero.
 
   FrameCamera* = object ## Define orthonormal directions of camera's own axes.
-    axis_sight*: Multivector ## Line joining eye to target, every direction below derives from.
-      ## Carried because debug layer draws it; see `TracedRole.SightAxis`.
     axis_right*: Direction ## Unit direction of view's +x.
     axis_up*: Direction ## Unit direction of view's +y.
     forward*: Direction ## Unit direction eye looks along.
@@ -413,7 +411,6 @@ func frame*(camera: Camera, eye: Position): FrameCamera =
     if dot(toMultivector(axis_up.get), toMultivector(UP_WORLD))[Basis.scalar] < 0: -1.0
     else: 1.0
   FrameCamera(
-    axis_sight: axis_sight,
     axis_right: axis_right.get,
     axis_up: orientation * axis_up.get,
     forward: forward.get,

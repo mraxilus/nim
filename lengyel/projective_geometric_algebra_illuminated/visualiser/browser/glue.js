@@ -656,10 +656,6 @@ document.documentElement.style.setProperty('--bg', rgbToCss(backdrop));
 
 nimInit(performance.now() / 1000);
 let is_axes_shown = true, is_grid_shown = true;
-// Debug layer, off by default: it draws every multivector frame computed, with.
-//   plane drawn as infinite lattice it actually is rather than as disc that stands
-//   for one. Reader switches it on to see algebra rather than illustration of it.
-let is_algebra_shown = false;
 
 function now() { return performance.now() / 1000; }
 
@@ -1001,10 +997,6 @@ document.getElementById('toggle-axes').addEventListener('click', (e) => {
 });
 document.getElementById('toggle-grid').addEventListener('click', (e) => {
   is_grid_shown = !is_grid_shown; e.target.classList.toggle('on', is_grid_shown);
-});
-document.getElementById('toggle-algebra').addEventListener('click', (e) => {
-  is_algebra_shown = !is_algebra_shown;
-  e.target.classList.toggle('on', is_algebra_shown);
 });
 /* ---------------------------------------------------------------------- */
 /* Help: ? button says it whenever asked.                                 */
@@ -2468,7 +2460,7 @@ const PHASES_DIAGNOSTIC = [
   ['grid', 'diagnostic-grid'], ['axes', 'diagnostic-axes'], ['scene', 'diagnostic-scene'],
   ['points', 'diagnostic-points'], ['lines', 'diagnostic-lines'], ['planes', 'diagnostic-planes'],
   ['sky', 'diagnostic-sky'], ['ghost', 'diagnostic-ghost'], ['selected', 'diagnostic-selected'],
-  ['algebra', 'diagnostic-algebra'], ['matrix', 'diagnostic-matrix'],
+  ['matrix', 'diagnostic-matrix'],
   ['flatten', 'diagnostic-flatten'],
   ['unaccounted', 'diagnostic-unaccounted'],
   // Second cut, not stages: these re-divide very milliseconds above them.
@@ -4678,7 +4670,7 @@ function renderFrame(now_seconds) {
   //   *counts* still come back either way; only times are skipped. Same argument as
   //   pool grid, objects list and operand pickers.
   const data = nimBuildFrame(
-    aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown, is_algebra_shown,
+    aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown,
     !(drawer.classList.contains('open') && section_diagnostics.classList.contains('open')),
   );
   // Record bridge's own three phases into same rings this side's phases use.
@@ -4704,10 +4696,6 @@ function renderFrame(now_seconds) {
   recordPhaseTime('grid', data.ms_grid);
   recordPhaseTime('axes', data.ms_axes);
   recordPhaseTime('scene', data.ms_scene);
-  // Debug layer, beside scene rather than inside it, so per-kind rows still.
-  //   account for scene exactly. Zero whenever layer is off, which is its resting
-  //   state.
-  recordPhaseTime('algebra', data.ms_algebra);
   recordPhaseTime('flatten', data.ms_flatten);
   // Scene phase broken out by kind of object each millisecond went to, with.
   //   counts kept beside them. Counts are latest rather than ringed: median count would

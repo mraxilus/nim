@@ -167,7 +167,7 @@ func placeChord(
   ##   Runs `span` either side of `centre` along `axis_point`, at full tint: fog fade runs
   ##   per fragment in shaders, against `mesh.alphaGridFade`.
   ##   Silently stops at scratch's end, for reason `placeGridFamily` gives.
-  ##   Shared by grid, axes and debug layer's lattices.
+  ##   Shared by grid and axes.
   ##   Whole line behind eye is culled here, not carried.
   ##     Shader refuses it anyway, but refused record still crossed wire and counted.
   ##     Depth along sight axis is linear along segment, so two behind-eye endpoints put
@@ -291,8 +291,8 @@ func placeGridFamily(
   ##   Draws nothing: algebra's half of seam, all multivector work.
   ##     Per-piece fade colours moved to fragment shader with fog (`mesh.alphaGridFade`),
   ##     taking family from boundary sum per fade piece to two per line.
-  ##   Serves `algebra_view` too, whose debug layer lays same lattice on arbitrary plane.
-  ##     Ground is that case with `origin` at world origin and two world axes for span.
+  ##   Lattice is laid on any plane through `origin` spanned by `along` and `across`;
+  ##     ground is that case with `origin` at world origin and two world axes for span.
   ##   Cell is passed in rather than read from `SIZE_CELL_GRID`, so both families lie on
   ##   one `sizeCellGridFor` answered for this frame's disc.
   ##   Lines sit on *world* multiples of cell size, not offsets from camera.
