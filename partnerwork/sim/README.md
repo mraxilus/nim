@@ -136,5 +136,19 @@ first and the build stops if any fails: a page drawing a model that has
 stopped holding is worse than no page. The floor's claims are a suite of their
 own that only asserts they are *decided*; `-d:floorIsLaw` makes them hard.
 
+The solver is built to be asked millions of times a sweep without the answers
+depending on it. What a state has that no evaluation changes -- each body's
+axes, its parts' sections and height bands, its shoulders -- is worked out
+once into a `Scene` and handed down; a seed is tried reach first, then joint
+by joint with the dear twist last, then by cost, and only then against the
+bodies, giving up at the first refusal, which is the same verdict `evaluate`
+reaches in full; a trial pose in the pattern search is one number changed in
+place and put back; and every pose the sweep carries is carried with the
+verdict that found it. Sweeps of different holds share nothing, so
+`sweptAll` runs them side by side on the cores there are, in a fixed order.
+None of it moves a number: the laws, `verdicts.md` and the whole-cloth page's
+`turns.js` come out byte for byte as they did when all of it was done the
+plain way, and that is the test of any change here.
+
 Published at <https://claude.ai/code/artifact/2944bc6a-551e-4b86-a258-7df1bfa83629>;
 republishing `sim/artifact.html` to that URL is the whole release step.

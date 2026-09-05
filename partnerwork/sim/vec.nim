@@ -38,17 +38,22 @@ func unit*(a: Vec): Vec =
   let n = norm(a)
   if n < 1e-12: (0.0, 0.0, 0.0) else: (a.x / n, a.y / n, a.z / n)
 
-func spun*(v, axis: Vec; by: float): Vec =
-  ## Turn `v` about the unit `axis` by `by` radians, anticlockwise looking
-  ## down the axis (Rodrigues).
+func spunBy*(v, axis: Vec; c, s: float): Vec =
+  ## Turn `v` about the unit `axis` by the angle whose cosine and sine are
+  ## `c` and `s`, anticlockwise looking down the axis (Rodrigues).
+  ##   The form the solver's loop wants: a swing is known by the dot and
+  ##     cross of two directions, which are that cosine and sine already, so
+  ##     no angle need be taken and its cosine and sine found again.
   let
-    c = cos(by)
-    s = sin(by)
     k = cross(axis, v)
     d = dot(axis, v)
   (v.x * c + k.x * s + axis.x * d * (1.0 - c),
    v.y * c + k.y * s + axis.y * d * (1.0 - c),
    v.z * c + k.z * s + axis.z * d * (1.0 - c))
+
+func spun*(v, axis: Vec; by: float): Vec =
+  ## Turn `v` about the unit `axis` by `by` radians.
+  spunBy(v, axis, cos(by), sin(by))
 
 func carried*(v, fromDir, toDir: Vec): Vec =
   ## Move `v` by the least rotation that takes the unit `fromDir` to the unit
@@ -67,7 +72,10 @@ func carried*(v, fromDir, toDir: Vec): Vec =
     if norm(across) < 1e-6:
       across = cross(fromDir, (0.0, 1.0, 0.0))
     return spun(v, unit(across), PI)
-  spun(v, (axis.x / s, axis.y / s, axis.z / s), arctan2(s, c))
+  # The angle is atan2(s, c); its cosine and sine are c and s over their
+  # hypotenuse, which is one for unit directions and is divided out anyway.
+  let r = sqrt(s * s + c * c)
+  spunBy(v, (axis.x / s, axis.y / s, axis.z / s), c / r, s / r)
 
 func perp*(a: Vec): Vec =
   ## Some unit direction at right angles to `a`, chosen the same way each time.

@@ -52,6 +52,47 @@ func shoulderLocal*(rig: Rig): Vec = (rig.shoulderOut, 0.0, rig.shoulderUp)
   ## The shoulder in the body's mirrored terms: always a right arm here.
 
 
+type Circle* = object ## The circle an elbow can sit on for one grip and hand.
+  ##   Everything `posed` works out that does not depend on the swivel, kept
+  ##     so a seed can try every swivel round it for the price of one.
+  s*, w*: Vec ## Shoulder and wrist.
+  stretch*: float ## Shoulder to wrist.
+  u*: Vec ## Unit, shoulder towards wrist; zero where the two coincide.
+  along*, rad*: float ## The circle's centre along `u`, and its radius.
+  down*, side*: Vec ## Its basis: the lowest point's direction, and across.
+
+
+func circleOf*(rig: Rig; s, g, h: Vec): Circle =
+  ## The elbow's circle for the arm from shoulder `s` to grip `g` with the
+  ## hand pointing along the unit `h`.
+  result.s = s
+  result.w = g - h * rig.hand
+  result.stretch = dist(result.w, s)
+  if result.stretch < 1e-9:
+    return
+  let d = result.stretch
+  result.u = (result.w - s) * (1.0 / d)
+  result.along = clamp((rig.upper * rig.upper - rig.fore * rig.fore + d * d) / (2.0 * d),
+                       -rig.upper, rig.upper)
+  result.rad = sqrt(max(0.0, rig.upper * rig.upper - result.along * result.along))
+  var down = REST_DOWN - result.u * dot(REST_DOWN, result.u)
+  if norm(down) < 1e-6:
+    down = perp(result.u)
+  else:
+    down = unit(down)
+  result.down = down
+  result.side = cross(result.u, down)
+
+func posedOn*(rig: Rig; c: Circle; g: Vec; c_swivel, s_swivel: float): Chain =
+  ## Lay the arm with its elbow on the circle at the swivel whose cosine and
+  ## sine these are.
+  result.stretch = c.stretch
+  if c.stretch < 1e-9:
+    result.pose = ArmPose(s: c.s, e: c.s + (0.0, 0.0, -rig.upper), w: c.w, g: g)
+    return
+  let e = c.s + c.u * c.along + c.down * (c.rad * c_swivel) + c.side * (c.rad * s_swivel)
+  result.pose = ArmPose(s: c.s, e: e, w: c.w, g: g)
+
 func posed*(rig: Rig; s, g, h: Vec; swivel: float): Chain =
   ## Lay the arm from shoulder `s` to grip `g` with the hand pointing along
   ## the unit `h` and the elbow at `swivel` round its circle, nought being
@@ -59,27 +100,7 @@ func posed*(rig: Rig; s, g, h: Vec; swivel: float): Chain =
   ##   Out of reach is not refused here: the elbow goes as far as it can and
   ##     the forearm is left too long, so that a searcher minimising the
   ##     overshoot has something smooth to descend.
-  let
-    w = g - h * rig.hand
-    d = dist(w, s)
-  result.stretch = d
-  if d < 1e-9:
-    result.pose = ArmPose(s: s, e: s + (0.0, 0.0, -rig.upper), w: w, g: g)
-    return
-  let
-    u = (w - s) * (1.0 / d)
-    along = clamp((rig.upper * rig.upper - rig.fore * rig.fore + d * d) / (2.0 * d),
-                  -rig.upper, rig.upper)
-    rad = sqrt(max(0.0, rig.upper * rig.upper - along * along))
-  var down = REST_DOWN - u * dot(REST_DOWN, u)
-  if norm(down) < 1e-6:
-    down = perp(u)
-  else:
-    down = unit(down)
-  let
-    side = cross(u, down)
-    e = s + u * along + down * (rad * cos(swivel)) + side * (rad * sin(swivel))
-  result.pose = ArmPose(s: s, e: e, w: w, g: g)
+  posedOn(rig, circleOf(rig, s, g, h), g, cos(swivel), sin(swivel))
 
 
 func placed*(rig: Rig; st: Stance; arm: Arm; u: Vec;
@@ -99,37 +120,64 @@ func placed*(rig: Rig; st: Stance; arm: Arm; u: Vec;
     w = e + f * rig.fore
     g = w + h * rig.hand
     ax = axesOf(st)
-  func placedOut(p: Vec): Vec =
-    toWorld(ax, (if arm == Arm.Left: mirrored(p) else: p))
-  ArmPose(s: placedOut(s), e: placedOut(e), w: placedOut(w), g: placedOut(g))
+  if arm == Arm.Left:
+    ArmPose(s: toWorld(ax, mirrored(s)), e: toWorld(ax, mirrored(e)),
+            w: toWorld(ax, mirrored(w)), g: toWorld(ax, mirrored(g)))
+  else:
+    ArmPose(s: toWorld(ax, s), e: toWorld(ax, e), w: toWorld(ax, w), g: toWorld(ax, g))
 
 
-func joints*(st: Stance; arm: Arm; pose: ArmPose): Joints =
-  ## Read every joint off the pose, in the body's own terms.
-  let ax = axesOf(st)
-  func own(p: Vec): Vec =
-    let q = toBody(ax, p)
-    if arm == Arm.Left: mirrored(q) else: q
+type Swing* = object ## The joints read before the twist, and what the twist needs.
+  joints*: Joints ## Everything but `twist`, which is nought here.
+  u*, f*: Vec ## Unit: the upper arm and the forearm, in the body's mirrored terms.
+
+
+func ownTerms*(ax: Axes; arm: Arm; p: Vec): Vec =
+  ## A world point in the body's mirrored terms: a right arm's, always.
+  let q = toBody(ax, p)
+  if arm == Arm.Left: mirrored(q) else: q
+
+func swing*(ax: Axes; arm: Arm; pose: ArmPose): Swing =
+  ## Read every joint but the twist off the pose, in the body's own terms.
+  ##   The twist is the dear one to read, and the one a seed asks for last,
+  ##     so it is read apart.
   let
-    s = own(pose.s)
-    e = own(pose.e)
-    w = own(pose.w)
-    g = own(pose.g)
+    s = ownTerms(ax, arm, pose.s)
+    e = ownTerms(ax, arm, pose.e)
+    w = ownTerms(ax, arm, pose.w)
+    g = ownTerms(ax, arm, pose.g)
     u = unit(e - s)
     f = unit(w - e)
     h = unit(g - w)
-  result.extend = arcsin(clamp(-u.y, -1.0, 1.0))
-  result.across = arcsin(clamp(-u.x, -1.0, 1.0))
-  result.elev = arcsin(clamp(u.z, -1.0, 1.0))
-  result.bend = angleBetween(u, f)
-  result.wrist = angleBetween(f, h)
-  if result.bend > STRAIGHT:
+  result.u = u
+  result.f = f
+  result.joints.extend = arcsin(clamp(-u.y, -1.0, 1.0))
+  result.joints.across = arcsin(clamp(-u.x, -1.0, 1.0))
+  result.joints.elev = arcsin(clamp(u.z, -1.0, 1.0))
+  result.joints.bend = angleBetween(u, f)
+  result.joints.wrist = angleBetween(f, h)
+
+func twistOf*(sw: Swing): float =
+  ## The shoulder's twist, read off the elbow's plane; nought where the
+  ## elbow is too straight to have one.
+  if sw.joints.bend > STRAIGHT:
     let
-      rest = carried(REST_PLANE, REST_DOWN, u)
-      plane = unit(cross(u, f))
-    result.twist = signedAngle(rest, plane, u)
+      rest = carried(REST_PLANE, REST_DOWN, sw.u)
+      plane = unit(cross(sw.u, sw.f))
+    signedAngle(rest, plane, sw.u)
   else:
-    result.twist = 0.0
+    0.0
+
+func joints*(ax: Axes; arm: Arm; pose: ArmPose): Joints =
+  ## Read every joint off the pose, in the body's own terms, the body's
+  ## axes already worked out.
+  let sw = swing(ax, arm, pose)
+  result = sw.joints
+  result.twist = twistOf(sw)
+
+func joints*(st: Stance; arm: Arm; pose: ArmPose): Joints =
+  ## Read every joint off the pose, in the body's own terms.
+  joints(axesOf(st), arm, pose)
 
 
 func reading*(j: Joints; dof: Dof): float =

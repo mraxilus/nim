@@ -20,7 +20,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[json, math, options, strutils]
+import std/[json, math, options, strutils, tables]
 
 import ../sim/[body, limb, read, rig, solve, sweep, vec]
 
@@ -143,10 +143,7 @@ func frame(m: Moment; band: Band): JsonNode =
     result["cn"].add cj
 
 
-proc sweepJson(hold: string; word: string; band: Band): JsonNode =
-  let
-    rest = rested(hold, band)
-    sw = swept(rest, Body.Two)
+proc sweepJson(hold: string; word: string; band: Band; sw: Sweep): JsonNode =
   result = %*{
     "restHolds": sw.restHolds,
     "neg": round(sw.neg.at * 1000.0) / 1000.0,
@@ -182,9 +179,21 @@ proc bridge(): JsonNode =
             "head": int(round(HUMAN.top[Part.Head] * 1000.0)),
             "shoulder": int(round(HUMAN.shoulderUp * 1000.0))}},
     "sweeps": {}}
+  # Every hold at every height is its own sweep; they are run side by side,
+  # the long ones -- over the head, where nothing blocks -- handed out first
+  # so no core is left sweeping alone at the end, and written in order.
+  var
+    jobs: seq[Job]
+    slot: Table[string, int]
+  for (word, band) in [BANDS[2], BANDS[1], BANDS[0]]:
+    for hold in HOLDS:
+      slot[hold & "|" & word] = jobs.len
+      jobs.add Job(rest: rested(hold, band), who: Body.Two, most: MOST)
+  let sweeps = sweptAll(jobs)
   for hold in HOLDS:
     for (word, band) in BANDS:
-      result["sweeps"][hold & "|" & word] = sweepJson(hold, word, band)
+      let key = hold & "|" & word
+      result["sweeps"][key] = sweepJson(hold, word, band, sweeps[slot[key]])
 
 
 when isMainModule:

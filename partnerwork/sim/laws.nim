@@ -44,18 +44,32 @@ proc turns(x: float): string = formatFloat(x, ffDecimal, 2)
 #[ The Sweeps, Once ]#
 
 
+func job(rest: State; who = Body.Two): Job = Job(rest: rest, who: who, most: MOST)
+
 let
-  llTorso = swept(oneLink(LEFT, LEFT, Band.Torso), Body.Two)
-  llNeck = swept(oneLink(LEFT, LEFT, Band.Neck), Body.Two)
-  llCrown = swept(oneLink(LEFT, LEFT, Band.Crown), Body.Two)
-  lrTorso = swept(oneLink(LEFT, RIGHT, Band.Torso), Body.Two)
-  lrNeck = swept(oneLink(LEFT, RIGHT, Band.Neck), Body.Two)
-  lrCrown = swept(oneLink(LEFT, RIGHT, Band.Crown), Body.Two)
-  rrTorso = swept(oneLink(RIGHT, RIGHT, Band.Torso), Body.Two)
-  rlTorso = swept(oneLink(RIGHT, LEFT, Band.Torso), Body.Two)
-  llByOne = swept(oneLink(LEFT, LEFT, Band.Torso), Body.One)
-  pairTorso = swept(twoLinks(LEFT, RIGHT, RIGHT, LEFT, Band.Torso), Body.Two)
-  crossedTorso = swept(twoLinks(LEFT, LEFT, RIGHT, RIGHT, Band.Torso, away = true), Body.Two)
+  sweeps = sweptAll([ # The two over the head first: they run furthest.
+    job(oneLink(LEFT, LEFT, Band.Crown)),
+    job(oneLink(LEFT, RIGHT, Band.Crown)),
+    job(oneLink(LEFT, LEFT, Band.Torso)),
+    job(oneLink(LEFT, LEFT, Band.Neck)),
+    job(oneLink(LEFT, RIGHT, Band.Torso)),
+    job(oneLink(LEFT, RIGHT, Band.Neck)),
+    job(oneLink(RIGHT, RIGHT, Band.Torso)),
+    job(oneLink(RIGHT, LEFT, Band.Torso)),
+    job(oneLink(LEFT, LEFT, Band.Torso), Body.One),
+    job(twoLinks(LEFT, RIGHT, RIGHT, LEFT, Band.Torso)),
+    job(twoLinks(LEFT, LEFT, RIGHT, RIGHT, Band.Torso, away = true))])
+  llCrown = sweeps[0]
+  lrCrown = sweeps[1]
+  llTorso = sweeps[2]
+  llNeck = sweeps[3]
+  lrTorso = sweeps[4]
+  lrNeck = sweeps[5]
+  rrTorso = sweeps[6]
+  rlTorso = sweeps[7]
+  llByOne = sweeps[8]
+  pairTorso = sweeps[9]
+  crossedTorso = sweeps[10]
   SWEEPS = [("L-l torso", llTorso), ("L-l neck", llNeck), ("L-l crown", llCrown),
             ("L-r torso", lrTorso), ("L-r neck", lrNeck), ("L-r crown", lrCrown),
             ("R-r torso", rrTorso), ("R-l torso", rlTorso), ("L-l by One", llByOne),

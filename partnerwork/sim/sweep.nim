@@ -17,6 +17,9 @@
 ##     dance does, the found pose is what a still picture allows.
 ##     Cost: the block depends on the path, so the same angle reached another
 ##       way could hold.  Accepted -- that is what a block is.
+##   Every pose the sweep carries is carried with its verdict, found once
+##     when the pose was; and the sweeps of different holds, which share
+##     nothing, are run side by side on what cores there are.
 
 {.experimental: "strictFuncs".}
 
@@ -62,21 +65,25 @@ func atTurn(rest: State; who: Body; turn: float): State =
   result.stance = turned(rest.stance, who, turn)
 
 
-func crept(rest: State; who: Body; here: State; fromTurn, toTurn: float):
-    tuple[state: State, turn: float] =
+func crept(rest: State; who: Body; here: Solved; fromTurn, toTurn: float):
+    tuple[got: Solved, turn: float] =
   ## Follow from `here` at `fromTurn` towards `toTurn` in small moves; where
   ## it gets to, which is `toTurn` unless a move failed.
   result = (here, fromTurn)
   for i in 1 .. SUBSTEPS:
     let
       t = fromTurn + (toTurn - fromTurn) * i.float / SUBSTEPS.float
-      next = follow(atTurn(rest, who, t), result.state)
+      next = followed(atTurn(rest, who, t), result.got.state)
     if next.isNone:
       return
     result = (next.get, t)
 
 
-func sweptWay(rest: State; who: Body; sign, most: float;
+func momentOf(turn: float; got: Solved; reseeded = false): Moment =
+  Moment(turn: turn, state: got.state, verdict: got.verdict, reseeded: reseeded)
+
+
+func sweptWay(rest: Solved; who: Body; sign, most: float;
               moments: var seq[Moment]): Block =
   ## Turn one way from a solved rest, adding the moments found.
   ##   At every moment the pose found afresh is taken where the arms go
@@ -89,39 +96,40 @@ func sweptWay(rest: State; who: Body; sign, most: float;
   while abs(t) < most - 1e-9:
     let
       tn = t + sign * STEP
-      sn = atTurn(rest, who, tn)
-      fresh = settle(sn)
-      got = crept(rest, who, here, t, tn)
+      sn = atTurn(rest.state, who, tn)
+      fresh = settled(sn)
+      got = crept(rest.state, who, here, t, tn)
       carried = abs(got.turn - tn) < 1e-9
-    if fresh.isSome and sameRoute(here, fresh.get) and
-       sameCrossings(here, fresh.get) and
-       (not carried or evaluate(fresh.get).cost <
-          evaluate(got.state).cost - SETTLING - jump(got.state, fresh.get)):
+    if fresh.isSome and
+       sameRoute(here.state, here.verdict, fresh.get.state, fresh.get.verdict) and
+       sameCrossings(here.state, here.verdict, fresh.get.state, fresh.get.verdict) and
+       (not carried or fresh.get.verdict.cost <
+          got.got.verdict.cost - SETTLING - jump(got.got.verdict, fresh.get.verdict)):
       here = fresh.get
       t = tn
-      moments.add Moment(turn: t, state: here, verdict: evaluate(here),
-                         reseeded: not carried)
+      moments.add momentOf(t, here, reseeded = not carried)
       continue
     if carried:
-      here = got.state
+      here = got.got
       t = tn
-      moments.add Moment(turn: t, state: here, verdict: evaluate(here))
+      moments.add momentOf(t, here)
       continue
     # No small move holds.  Before calling it a block, look harder for a
     # pose the arms could take: the grid is coarse and a corner is narrow.
-    let stuck = got.state
-    let finer = settle(sn, fine = true)
-    if finer.isSome and sameRoute(stuck, finer.get) and
-       sameCrossings(stuck, finer.get):
+    let stuck = got.got
+    let finer = settled(sn, fine = true)
+    if finer.isSome and
+       sameRoute(stuck.state, stuck.verdict, finer.get.state, finer.get.verdict) and
+       sameCrossings(stuck.state, stuck.verdict, finer.get.state, finer.get.verdict):
       here = finer.get
       t = tn
-      moments.add Moment(turn: t, state: here, verdict: evaluate(here),
-                         reseeded: true)
+      moments.add momentOf(t, here, reseeded = true)
       continue
     if abs(got.turn - t) > 1e-9:
-      moments.add Moment(turn: got.turn, state: stuck, verdict: evaluate(stuck))
+      moments.add momentOf(got.turn, stuck)
     return Block(at: abs(got.turn), stopped: true,
-                 why: reason(atTurn(rest, who, got.turn + sign * STEP / SUBSTEPS.float), stuck),
+                 why: reason(atTurn(rest.state, who, got.turn + sign * STEP / SUBSTEPS.float),
+                             stuck.state),
                  foundAnyway: fresh.isSome or finer.isSome)
   Block(at: most, stopped: false)
 
@@ -131,7 +139,7 @@ const
   TRIAL = 0.30 ## Turns each way a rest is tried for.
 
 
-func setUp(rest: State; who: Body): Option[State] =
+func setUp(rest: State; who: Body): Option[Solved] =
   ## The rest to sweep from: of the few distinct rests the search settles
   ## on, the one that turns furthest in a short trial each way, and the
   ## least strained where two go equally far.
@@ -140,7 +148,7 @@ func setUp(rest: State; who: Body): Option[State] =
   var arranged = rest
   arranged.overhead = true
   arranged.turning = who
-  let all = restings(arranged, fine = true)
+  let all = restingsWith(arranged, fine = true)
   var
     bestScore = -Inf
   for i in 0 ..< min(TRIES, all.len):
@@ -162,7 +170,8 @@ func swept*(rest: State; who: Body; most = MOST): Sweep =
   ## Turn `who` from the rest as far as it goes each way.
   result.who = who
   result.step = STEP
-  let solved = if rest.params.len == rest.links.len: some(rest)
+  let solved = if rest.params.len == rest.links.len:
+                 some(Solved(state: rest, verdict: evaluate(rest)))
                else: setUp(rest, who)
   result.restHolds = solved.isSome
   if solved.isNone:
@@ -170,14 +179,13 @@ func swept*(rest: State; who: Body; most = MOST): Sweep =
     result.neg = Block(at: 0.0, stopped: true)
     result.pos = Block(at: 0.0, stopped: true)
     return
-  result.rest = solved.get
+  result.rest = solved.get.state
   var neg, pos: seq[Moment]
-  result.neg = sweptWay(result.rest, who, -1.0, most, neg)
-  result.pos = sweptWay(result.rest, who, 1.0, most, pos)
+  result.neg = sweptWay(solved.get, who, -1.0, most, neg)
+  result.pos = sweptWay(solved.get, who, 1.0, most, pos)
   for i in countdown(neg.len - 1, 0):
     result.moments.add neg[i]
-  result.moments.add Moment(turn: 0.0, state: result.rest,
-                            verdict: evaluate(result.rest))
+  result.moments.add momentOf(0.0, solved.get)
   result.moments.add pos
 
 
@@ -195,3 +203,56 @@ func at*(sw: Sweep; turn: float): Option[Moment] =
     if abs(sw.moments[i].turn - turn) < abs(sw.moments[best].turn - turn):
       best = i
   some(sw.moments[best])
+
+
+#[ Many At Once ]#
+
+
+type Job* = object ## One sweep to run: a hold, who turns, how far.
+  rest*: State
+  who*: Body
+  most*: float
+
+
+when defined(js) or not compileOption("threads"):
+  proc sweptAll*(jobs: openArray[Job]): seq[Sweep] =
+    ## Every job's sweep, in the jobs' order, one after another.
+    for job in jobs:
+      result.add swept(job.rest, job.who, job.most)
+else:
+  import std/[atomics, cpuinfo, typedthreads]
+
+  type Work = object ## What a worker thread is handed.
+    jobs: ptr UncheckedArray[Job]
+    done: ptr UncheckedArray[Sweep]
+    n: int
+    next: ptr Atomic[int]
+
+  proc worker(w: Work) {.thread.} =
+    ## Take the next job not yet taken, sweep it, and put the sweep in its
+    ## slot, until there are none.
+    while true:
+      let i = w.next[].fetchAdd(1)
+      if i >= w.n:
+        break
+      w.done[i] = swept(w.jobs[i].rest, w.jobs[i].who, w.jobs[i].most)
+
+  proc sweptAll*(jobs: openArray[Job]): seq[Sweep] =
+    ## Every job's sweep, in the jobs' order, run on as many threads as
+    ## there are cores.
+    ##   Each sweep is a pure function of its job and touches nothing
+    ##     shared, so the threads share only the counter of the next job;
+    ##     the slot each writes is its own until every thread has joined.
+    result = newSeq[Sweep](jobs.len)
+    if jobs.len == 0:
+      return
+    var
+      owned = @jobs
+      next: Atomic[int]
+      threads = newSeq[Thread[Work]](min(jobs.len, max(1, countProcessors())))
+    let w = Work(jobs: cast[ptr UncheckedArray[Job]](owned[0].addr),
+                 done: cast[ptr UncheckedArray[Sweep]](result[0].addr),
+                 n: jobs.len, next: next.addr)
+    for t in threads.mitems:
+      createThread(t, worker, w)
+    joinThreads(threads)

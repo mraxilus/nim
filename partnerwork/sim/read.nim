@@ -108,7 +108,11 @@ func writhe*(s: State; v: Verdict): int =
     result += (if c.over == 0: 1 else: -1) * c.sense
 
 
+func sameCrossings*(a: State; va: Verdict; b: State; vb: Verdict): bool =
+  ## Whether one judged pose's arms can become the other's without passing
+  ## through each other, read off the writhe.
+  abs(writhe(a, va) - writhe(b, vb)) < 2
+
 func sameCrossings*(a, b: State): bool =
-  ## Whether one pose's arms can become the other's without passing through
-  ## each other, read off the writhe.
-  abs(writhe(a, evaluate(a)) - writhe(b, evaluate(b))) < 2
+  ## The same, the states judged here.
+  sameCrossings(a, evaluate(a), b, evaluate(b))

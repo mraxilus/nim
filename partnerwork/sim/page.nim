@@ -58,7 +58,7 @@ var
   dial: array[Knob, float] = [0.0, 0.0, 0.40, 0.64, 0.95]
   joined: array[PAIRS.len, bool] = [true, false, false, false]
   band = Band.Torso
-  carried: Option[State] ## The last pose, for a turn to carry on from.
+  carried: Option[Solved] ## The last pose, for a turn to carry on from.
   carriedKey = "" ## What that pose was of, so a changed hold settles afresh.
 
 
@@ -101,19 +101,20 @@ proc keyOf(s: State): string =
     result.add &"/{ord(link.ends[0].arm)}{ord(link.ends[1].arm)}"
 
 
-proc solved(): Option[State] =
-  ## The pose for the controls: carried from the last one where only a turn
-  ## has moved, settled afresh otherwise.
+proc solved(): Option[Solved] =
+  ## The pose for the controls, with its verdict: carried from the last one
+  ## where only a turn has moved, settled afresh otherwise.
   let s = base()
   if s.links.len == 0:
-    return none(State)
+    return none(Solved)
   let key = keyOf(s)
   if carried.isSome and key == carriedKey:
-    result = follow(s, carried.get)
-    if result.isSome and sameRoute(carried.get, result.get):
+    result = followed(s, carried.get.state)
+    if result.isSome and sameRoute(carried.get.state, carried.get.verdict,
+                                   result.get.state, result.get.verdict):
       carried = result
       return
-  result = settle(s)
+  result = settled(s)
   carried = result
   carriedKey = key
 
@@ -207,7 +208,7 @@ proc mount() =
     """<div class="stage" id="stage"></div>""" &
     &"""<div class="panel"><div class="picks">{picks}</div>""" &
     &"""<div class="picks">{heights}</div>{controls}""" &
-    """<button id="sweep" class="pick">sweep the follow's turn (a minute or two)</button></div>""" &
+    """<button id="sweep" class="pick">sweep the follow's turn (about three minutes)</button></div>""" &
     """<div class="says-wrap"><div id="says"></div>""" &
     """<div id="limit"></div></div>""")
 
@@ -233,8 +234,8 @@ proc render() =
       else: """<p class="none">No pose holds here: no way of laying the arms keeps every joint in its range and every arm out of every body.</p>""")
     return
   let
-    s = got.get
-    v = evaluate(s)
+    s = got.get.state
+    v = got.get.verdict
   document.getElementById("stage").innerHTML =
     cstring(draw.plan(s, v) & draw.elevation(s, v))
   document.getElementById("says").innerHTML = cstring(readout(s, v, on))
@@ -260,7 +261,7 @@ proc sweepNow() =
     return
   s.stance = facing(s.rig, max(dial[Knob.Apart], touching(s.rig)))
   document.getElementById("limit").innerHTML = cstring(
-    """<p class="limit">Sweeping&hellip; a fiftieth of a turn at a time, each way, until a joint runs out. In a browser this takes a minute or two.</p>""")
+    """<p class="limit">Sweeping&hellip; a fiftieth of a turn at a time, each way, until a joint runs out. In a browser this takes about three minutes.</p>""")
   discard setTimeout(proc () =
     let sw = swept(s, Body.Two, most = 1.5)
     if not sw.restHolds:

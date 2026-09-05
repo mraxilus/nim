@@ -55,20 +55,21 @@ task marks, "Check and rebuild the mark workbench's four pages":
 task sim, "Check the body sim's laws, then build its page":
   # The laws first: a page that draws a model which has stopped holding is
   # worse than no page.  Nothing here touches the ontology, which is the
-  # whole point of the directory being its own.  Release builds: the laws
-  # sweep every hold, which is minutes of solving.
-  exec "nim c -r -d:release --hints:off -o:sim/laws sim/laws.nim"
+  # whole point of the directory being its own.  Danger builds: the laws
+  # sweep every hold, which is a great deal of solving, and the checks a
+  # release build keeps guard nothing the laws do not.
+  exec "nim c -r -d:danger --hints:off -o:sim/laws sim/laws.nim"
   exec "nim js -d:release --hints:off -o:sim/sim.js sim/page.nim"
   bundleOne("sim")
 
 task verdicts, "Ask the sim which of the sheet's modifier states hold":
   # An instrument run, not a build: the answers land in sim/verdicts.md.
-  exec "nim c -r -d:release --hints:off -o:sim/verdicts sim/verdicts.nim"
+  exec "nim c -r -d:danger --hints:off -o:sim/verdicts sim/verdicts.nim"
 
 task turns, "Sweep every hold with the body sim for the whole-cloth page, and splice it in":
   # The page animates a hold turning by drawing what the sim found; the
   # sweeps are run natively here and land in the page's one generated slot.
-  exec "nim c -r -d:release --hints:off -o:design/turns design/turns.nim"
+  exec "nim c -r -d:danger --hints:off -o:design/turns design/turns.nim"
   let
     page = readFile("design/wholecloth.html")
     opening = "<script id=\"turns-sim\">"

@@ -11,7 +11,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options, strformat, strutils]
+import std/[math, options, strformat, strutils, tables]
 
 import ./[body, limb, read, rig, solve, sweep, vec]
 
@@ -103,6 +103,55 @@ func blockLine(s: State; b: Block; sign: string): string =
     result.add " (a pose holds a step beyond, but not one the arms can reach)"
 
 
+#[ The Sweeps, Once ]#
+
+
+var sweeps: Table[string, Sweep] ## Every sweep asked for, by what it is of.
+
+func keyOf(s: State; who: Body): string =
+  ## What a sweep is a sweep of: the hold, the band, the stance, who turns.
+  result = &"{ord(who)}|{ord(s.band)}|{s.stance[Body.Two].centre.y}|{s.stance[Body.Two].facing}"
+  for link in s.links:
+    result.add &"|{ord(link.ends[0].arm)}{ord(link.ends[1].arm)}"
+
+proc sweepOf(s: State; who: Body): Sweep =
+  ## The sweep of a hold: from the batch where it was asked for there,
+  ## else swept now.
+  let key = keyOf(s, who)
+  if key notin sweeps:
+    sweeps[key] = swept(s, who)
+  sweeps[key]
+
+proc askAll(asks: openArray[(State, Body)]) =
+  ## Sweep every hold the sections will ask about, once each, side by side.
+  var
+    jobs: seq[Job]
+    keys: seq[string]
+  for (s, who) in asks:
+    let key = keyOf(s, who)
+    if key in sweeps or key in keys:
+      continue
+    keys.add key
+    jobs.add Job(rest: s, who: who, most: MOST)
+  let got = sweptAll(jobs)
+  for i, key in keys:
+    sweeps[key] = got[i]
+
+proc askEverything() =
+  ## Every sweep the report reads, the long ones -- over the head -- first.
+  var asks: seq[(State, Body)]
+  for (word, band) in [BANDS[2], BANDS[1], BANDS[0]]:
+    for (a, b) in [(Arm.Left, Arm.Left), (Arm.Right, Arm.Right),
+                   (Arm.Left, Arm.Right), (Arm.Right, Arm.Left)]:
+      asks.add (oneLink(a, b, band), Body.Two)
+    asks.add (twoLinks(Arm.Left, Arm.Right, Arm.Right, Arm.Left, band), Body.Two)
+    asks.add (twoLinks(Arm.Left, Arm.Left, Arm.Right, Arm.Right, band, away = true), Body.Two)
+  asks.add (oneLink(Arm.Left, Arm.Left, Band.Torso), Body.One)
+  for apart in [0.34, 0.50]:
+    asks.add (oneLink(Arm.Left, Arm.Left, Band.Torso, apart = apart), Body.Two)
+  askAll(asks)
+
+
 #[ Sections ]#
 
 
@@ -128,7 +177,7 @@ proc singleHolds(): string =
   for (a, b, name) in [(Arm.Left, Arm.Left, "L-l"), (Arm.Right, Arm.Right, "R-r"),
                        (Arm.Left, Arm.Right, "L-r"), (Arm.Right, Arm.Left, "R-l")]:
     for (word, band) in BANDS:
-      let sw = swept(oneLink(a, b, band), Body.Two)
+      let sw = sweepOf(oneLink(a, b, band), Body.Two)
       result.add &"### {name}, {word}\n\n"
       if not sw.restHolds:
         result.add "No pose holds at the rest.\n\n"
@@ -154,7 +203,7 @@ proc floorClaim(): string =
   result.add "| hold | level | way | floor says | sim says | the sim names |\n|---|---|---|---|---|---|\n"
   for (a, b, name, lockSign) in [(Arm.Left, Arm.Left, "L-l", -1.0), (Arm.Left, Arm.Right, "L-r", 1.0)]:
     for (word, band) in BANDS:
-      let sw = swept(oneLink(a, b, band), Body.Two)
+      let sw = sweepOf(oneLink(a, b, band), Body.Two)
       for (way, sign) in [("lock way", lockSign), ("wrap way", -lockSign)]:
         let blk = if sign < 0: sw.neg else: sw.pos
         let floor = if band == Band.Crown: "no block"
@@ -173,7 +222,7 @@ proc pairHolds(): string =
     for (word, band) in BANDS:
       var s = links
       s.band = band
-      let sw = swept(s, Body.Two)
+      let sw = sweepOf(s, Body.Two)
       result.add &"### {name}, {word}\n\n"
       if not sw.restHolds:
         result.add "No pose holds at the rest.\n\n"
@@ -213,7 +262,7 @@ proc chain(): string =
 
 
 proc drawnRow(drawn: string; s: State; who: Body; turn: float; band: Band): string =
-  let sw = swept(s, who)
+  let sw = sweepOf(s, who)
   let m = sw.at(turn)
   if m.isNone or abs(m.get.turn - turn) > 0.011:
     return &"| {drawn} | turned {turns(turn)} | blocked before it | | | |\n"
@@ -240,7 +289,7 @@ proc standing(): string =
   result.add "L-l low, turning her, at three stances: what the block does when the couple step in or out.\n\n"
   result.add "| apart | lock way | wrap way |\n|---|---|---|\n"
   for apart in [0.34, 0.40, 0.50]:
-    let sw = swept(oneLink(Arm.Left, Arm.Left, Band.Torso, apart = apart), Body.Two)
+    let sw = sweepOf(oneLink(Arm.Left, Arm.Left, Band.Torso, apart = apart), Body.Two)
     if not sw.restHolds:
       result.add &"| {apart} m | no rest | |\n"
       continue
@@ -259,6 +308,7 @@ proc report(): string =
   result.add "| the hands over the crown | above |\n"
   result.add "| the arm carried there but not pressing the body | led |\n\n"
   result.add "Read with the model's limits in mind: the shoulder girdle is rigid and the trunk does not twist, so a reach a dancer gets by rolling a shoulder forward is refused here; the couple never step apart; a torso is an ellipse of its round.  A *blocks* is therefore a little early, and a *holds* says the pose exists without any of that help.\n\n"
+  askEverything()
   result.add rigTable()
   result.add singleHolds()
   result.add floorClaim()
