@@ -39,13 +39,18 @@ import std/[options, strformat]
 
 import ../../pga
 import ./gui
-import ../core/[boundary, camera, format, help, history, interaction, tessellate, scene, selection]
+import ../core/[
+  boundary, camera, format, help, history, interaction, picking, tessellate, scene, selection,
+]
 
 
 
 #[ Panel Configuration ]#
 
 const
+  INSET_MENU_POINTER = 8.0'f32
+    ## Set how far menu's corner stands from pointer that opened it, in pixels.
+    ##   Context menu's own convention: beside pointer, not under it.
   MESSAGE_MAX* = 96
     ## Bound length of outcome reported after action.
   PATH_MAX* = 256
@@ -188,6 +193,11 @@ type
       ## Kept between frames.
       ##   Object it follows can pass behind camera, and menu that vanished for those
       ##   frames would be worse than one staying put.
+    corner_menu_pointer*: Option[array[2, cfloat]] ## Where pointer that opened menu asked
+      ## its top-left corner to stand, until first layout turns it into offset below.
+    offset_menu_selection*: Option[array[2, cfloat]] ## Where menu's corner stands from
+      ## object's anchor while pointer placed it; none where it sits above object.
+      ## Offset rather than fixed spot, so orbiting carries menu with object.
     index_operation_menu*: cint ## Operation picked in that menu.
       ## Own reading: section's list is indexed per arity reader chose there, menu's is
       ## always arity selection implies.
@@ -235,18 +245,32 @@ func isPending*(row: ItemRow): bool = row.slot.isNone
   ## Report whether row is composing object that does not exist yet.
 
 
-func showSelectionMenu*(panel: var Panel) =
+func showSelectionMenu*(
+  panel: var Panel, pointer: Option[ScreenPosition] = none(ScreenPosition)
+) =
   ## Bring floating selection menu up over whatever is picked, closed on picker.
   ##   Every gesture that picks calls this; every gesture that builds calls
   ##   `hideSelectionMenu`.
+  ##   `pointer` is where click that revealed it landed: menu then opens beside pointer,
+  ##   as context menu does, and keeps that offset from object as camera moves. None from
+  ##   objects list, which has no pointer over scene; menu sits above object instead.
   panel.is_menu_selection_shown = true
   panel.is_menu_selection_picking = false
+  panel.offset_menu_selection = none(array[2, cfloat])
+  panel.corner_menu_pointer =
+    if pointer.isSome:
+      some([
+        cfloat(pointer.get.x) + INSET_MENU_POINTER, cfloat(pointer.get.y) + INSET_MENU_POINTER,
+      ])
+    else: none(array[2, cfloat])
 
 
 func hideSelectionMenu*(panel: var Panel) =
   ## Put floating selection menu away, leaving selection alone.
   panel.is_menu_selection_shown = false
   panel.is_menu_selection_picking = false
+  panel.corner_menu_pointer = none(array[2, cfloat])
+  panel.offset_menu_selection = none(array[2, cfloat])
 
 
 func geometry*(session: EditSession): Multivector =
@@ -1179,11 +1203,27 @@ proc layoutSelectionMenu*(
   ##   Longer than sixty-line default: past `apply`, one run of buttons whose only shared
   ##   state is which is on line so far.
   if not panel.is_menu_selection_shown or panel.selection.len == 0: return
-  if anchor.isSome:
+  # Turn pointer's corner into offset from object once both are known.
+  #   Menu then follows object at that offset; see `showSelectionMenu`.
+  if panel.corner_menu_pointer.isSome:
+    let corner = panel.corner_menu_pointer.get
+    panel.position_menu_selection = corner
+    if anchor.isSome:
+      panel.offset_menu_selection =
+        some([corner[0] - anchor.get.x, corner[1] - anchor.get.y])
+      panel.corner_menu_pointer = none(array[2, cfloat])
+  elif anchor.isSome and panel.offset_menu_selection.isSome:
+    let offset = panel.offset_menu_selection.get
+    panel.position_menu_selection = [anchor.get.x + offset[0], anchor.get.y + offset[1]]
+  elif anchor.isSome:
     panel.position_menu_selection = [
       anchor.get.x,
       max(anchor.get.y - OFFSET_MENU_SELECTION, MARGIN_MENU_SELECTION),
     ]
+  # Hang pointer-placed menu from its top-left corner, anchored one from bottom middle.
+  #   Anchored menu stands above object; pointer-placed one beside pointer.
+  let is_by_pointer = panel.offset_menu_selection.isSome or panel.corner_menu_pointer.isSome
+  let (pivot_x, pivot_y) = if is_by_pointer: (0.0'f32, 0.0'f32) else: (0.5'f32, 1.0'f32)
   let count = panel.selection.len
   var is_line_started = false # Whether anything is on row yet; first button placed then
     # does not ask for `sameLine` with nothing to continue.
@@ -1197,7 +1237,7 @@ proc layoutSelectionMenu*(
       panel.position_menu_selection[1],
       MARGIN_MENU_SELECTION, gui.viewportHeight() - MARGIN_MENU_SELECTION,
     ),
-    0.5, 1.0,
+    pivot_x, pivot_y,
   ):
     if count <= 2:
       layoutSelectionMenuApply(panel, scene, camera, history, now)

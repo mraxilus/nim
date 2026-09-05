@@ -4422,7 +4422,12 @@ function refreshSelectionMenu(position_local) {
   menu_selection_edit.style.display = n === 1 ? '' : 'none'; // One object has one editor.
   menu_selection_hide.textContent = nimSelectionAllHidden() ? 'show' : 'hide';
   closeSelectionMenuOp(); // Any fresh selection change resets picker closed.
-  if (position_local) positionSelectionMenuAt(position_local); else updateSelectionMenuPosition();
+  if (position_local) {
+    positionSelectionMenuAt(position_local);
+  } else {
+    offset_menu_selection = null; // Opened with no pointer: above object, as ever.
+    updateSelectionMenuPosition();
+  }
   menu_selection.classList.add('show');
 }
 
@@ -4436,27 +4441,65 @@ function hideSelectionMenu() {
   menu_selection.classList.remove('show');
   closeSelectionMenuOp();
   arity_menu_last = -1;
+  offset_menu_selection = null;
 }
 
-function positionSelectionMenuAt(position_local) {
+// Where menu's top-left corner stands from last-picked object's anchor, in canvas pixels,.
+//   while pointer placed it; null where it was opened with no pointer and sits above
+//   object instead. Offset rather than fixed spot, so orbiting carries menu with object
+//   instead of snapping it back to object's centre next frame -- what every frame used
+//   to do, one frame after click had placed it.
+let offset_menu_selection = null;
+// How far menu's corner stands from pointer that opened it, in pixels.
+//   Context menu's own convention: beside pointer, not under it.
+const INSET_MENU_POINTER = 8;
+// How far menu stands above object it was opened over with no pointer, in pixels.
+const LIFT_MENU_ANCHOR = 60;
+
+// Read where last-picked object stands on canvas, or null off screen or behind eye.
+function anchorOfSelectionMenu() {
+  if (slots_selection.length === 0) return null;
+  const slot_anchor = slots_selection[slots_selection.length - 1];
+  const anchor = nimAnchorScreen(slot_anchor, canvas.clientWidth, canvas.clientHeight);
+  return anchor[2] > 0.5 ? { x: anchor[0], y: anchor[1] } : null;
+}
+
+// Put menu's top-left corner at canvas-local point, kept inside window.
+function placeSelectionMenu(corner_local) {
   const rect = canvas.getBoundingClientRect();
   // Reserved right margin covers widest state this popover reaches: op-picker.
   //   row (select sized to its own longest notation, e.g. "𝐧 ∨ (𝐦 ∧ 𝐧☆)", plus "apply"/
   //   "back") now that select's own width is content-sized rather than truncated.
   menu_selection.style.left =
-    Math.min(rect.left + position_local.x, window.innerWidth - 300) + 'px';
-  menu_selection.style.top = Math.max(rect.top + position_local.y - 60, 8) + 'px';
+    Math.max(8, Math.min(rect.left + corner_local.x, window.innerWidth - 300)) + 'px';
+  menu_selection.style.top =
+    Math.max(8, Math.min(rect.top + corner_local.y, window.innerHeight - 60)) + 'px';
+}
+
+// Open menu beside pointer, and remember where that is from object it is about.
+function positionSelectionMenuAt(position_local) {
+  const corner = {
+    x: position_local.x + INSET_MENU_POINTER, y: position_local.y + INSET_MENU_POINTER,
+  };
+  const anchor = anchorOfSelectionMenu();
+  offset_menu_selection = anchor ? { x: corner.x - anchor.x, y: corner.y - anchor.y } : null;
+  placeSelectionMenu(corner);
 }
 
 function updateSelectionMenuPosition() {
-  // Keep menu glued to most-recently-selected slot's own screen position every.
-  //   frame it's open, generalizing old tap-menu's single-slot follow -- average
-  //   across all selected would jump around as membership changes for no real benefit.
+  // Keep menu with most-recently-selected slot every frame it's open: at offset pointer.
+  //   left it, or above object where no pointer opened it. Most recent rather than
+  //   average across all selected, which would jump around as membership changes.
   if (!menu_selection.classList.contains('show') || slots_selection.length === 0) return;
-  const slot_anchor = slots_selection[slots_selection.length - 1];
-  const anchor = nimAnchorScreen(slot_anchor, canvas.clientWidth, canvas.clientHeight);
-  if (anchor[2] <= 0.5) return; // Off-screen -- leave menu at its last valid spot.
-  positionSelectionMenuAt({ x: anchor[0], y: anchor[1] });
+  const anchor = anchorOfSelectionMenu();
+  if (anchor === null) return; // Off-screen -- leave menu at its last valid spot.
+  if (offset_menu_selection !== null) {
+    placeSelectionMenu({
+      x: anchor.x + offset_menu_selection.x, y: anchor.y + offset_menu_selection.y,
+    });
+  } else {
+    placeSelectionMenu({ x: anchor.x, y: anchor.y - LIFT_MENU_ANCHOR });
+  }
 }
 
 menu_selection_apply.addEventListener('click', () => {

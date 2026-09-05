@@ -1013,11 +1013,12 @@ proc handleEvent(
         #   back; see `revealsWithoutPicking`.
         if revealsMenuFor(event.button.button) and not is_shifted and
             revealsWithoutPicking(panel.selection.len > 0, panel.is_menu_selection_shown):
-          panel.showSelectionMenu()
+          panel.showSelectionMenu(some(interaction.cursor))
         else:
           if is_shifted: panel.selection.toggle(outcome.index_clicked.get)
           else: panel.selection.selectOnly(outcome.index_clicked.get)
-          if revealsMenuFor(event.button.button): panel.showSelectionMenu()
+          if revealsMenuFor(event.button.button):
+            panel.showSelectionMenu(some(interaction.cursor))
           else: panel.hideSelectionMenu()
       elif outcome.index_created.isSome:
         panel.selection.selectOnly(outcome.index_created.get)
@@ -1040,11 +1041,12 @@ proc handleEvent(
         let slot = interaction.index_hover.get
         if revealsMenuFor(event.button.button) and not is_shifted and
             revealsWithoutPicking(panel.selection.len > 0, panel.is_menu_selection_shown):
-          panel.showSelectionMenu()
+          panel.showSelectionMenu(some(interaction.cursor))
         else:
           if is_shifted: panel.selection.toggle(slot)
           else: panel.selection.selectOnly(slot)
-          if revealsMenuFor(event.button.button): panel.showSelectionMenu()
+          if revealsMenuFor(event.button.button):
+            panel.showSelectionMenu(some(interaction.cursor))
           else: panel.hideSelectionMenu()
       elif event.button.button == uint8(MouseButton.Left) and not is_shifted:
         # Clear selection, mirroring browser; shift means "keep what I have".
