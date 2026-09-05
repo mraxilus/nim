@@ -870,13 +870,8 @@ func advance*(
   if tween.goal.isNone or tween.is_arrived: return
   let progress = ease(clamp((now - tween.started) / max(tween.duration, 1.0e-6), 0.0, 1.0))
   camera = camera.placed(tween.placement_from.toward(tween.destination, progress))
+      )
   if now - tween.started >= tween.duration: tween.is_arrived = true
-
-
-func isCarrying*(tween: CameraTween): bool = tween.goal.isSome and not tween.is_arrived
-  ## Report whether ease is mid-flight, camera still on its way to destination.
-  ##   For whoever must wait for view to settle before placing something against it:
-  ##   selection menu opened beside pointer, which object glides away from otherwise.
 
 
 func settle*(tween: var CameraTween, camera: var Camera) =

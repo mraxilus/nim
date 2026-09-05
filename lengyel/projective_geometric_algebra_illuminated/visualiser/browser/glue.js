@@ -682,15 +682,7 @@ function refreshSelectionSnapshot() {
 
 function onSelectionChanged(position_local) {
   refreshSelectionSnapshot();
-  // Menu opened by pointer waits for camera to settle; see `is_reveal_menu_pending`.
-  //   Picking eases view to what was picked, and menu opened at once glided away from
-  //   pointer with object.
-  if (position_local) {
-    hideSelectionMenu();
-    is_reveal_menu_pending = slots_selection.length > 0;
-  } else {
-    refreshSelectionMenu(null);
-  }
+  refreshSelectionMenu(position_local);
   refreshObjectsUI(); // Also re-syncs apply controls and row checkboxes.
 }
 
@@ -4447,17 +4439,6 @@ function hideSelectionMenu() {
   closeSelectionMenuOp();
   arity_menu_last = -1;
   offset_menu_selection = null;
-  is_reveal_menu_pending = false;
-}
-
-// Whether pointer asked for menu that waits for camera's ease to settle.
-//   Frame loop opens it beside pointer where it then stands, once `nimCameraIsCarrying`
-//   says view has arrived; ease is armed by frame after pick, so first frame waits.
-let is_reveal_menu_pending = false;
-function revealSelectionMenuIfSettled() {
-  if (!is_reveal_menu_pending || nimCameraIsCarrying()) return;
-  is_reveal_menu_pending = false;
-  refreshSelectionMenu(cursor_last);
 }
 
 // Where menu's top-left corner stands from last-picked object's anchor, in canvas pixels,.
@@ -4920,7 +4901,6 @@ function frame() {
   if (nimDragActive()) nimUpdateDrag(now_seconds);
 
   renderFrame(now_seconds);
-  revealSelectionMenuIfSettled();
 
   // Immediately after last draw call and before this callback yields, which is only.
   //   moment drawing buffer is still there to read; see `captureFrameIfAsked`.

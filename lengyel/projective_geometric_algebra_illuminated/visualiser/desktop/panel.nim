@@ -180,8 +180,6 @@ type
     index_arity*: cint ## Arity filter operation picker offers.
       ## 0 unary, 1 binary, matching `Arity`'s ordinals.
       ## Filters list rather than greying second operand.
-    is_menu_reveal_pending*: bool ## Whether pointer asked for menu that waits on camera.
-      ## Shown beside pointer once `tween_camera` has settled; see `revealSelectionMenuLater`.
     is_menu_selection_shown*: bool ## Whether floating selection menu is on screen.
       ## See `layoutSelectionMenu`.
       ## Not derived from selection being non-empty.
@@ -249,7 +247,6 @@ func showSelectionMenu*(panel: var Panel) =
   ##   builds calls `hideSelectionMenu`.
   panel.is_menu_selection_shown = true
   panel.is_menu_selection_picking = false
-  panel.is_menu_reveal_pending = false
   panel.offset_menu_selection = none(array[2, cfloat])
   panel.corner_menu_pointer = none(array[2, cfloat])
 
@@ -263,20 +260,10 @@ func showSelectionMenuAt*(panel: var Panel, pointer: ScreenPosition) =
   ])
 
 
-func revealSelectionMenuLater*(panel: var Panel) =
-  ## Ask for menu beside pointer once camera has settled on what was picked.
-  ##   Picking eases view to object, and menu opened at once glided away from pointer with
-  ##   it. Frame loop opens it through `showSelectionMenuAt` when `tween_camera` arrives.
-  panel.is_menu_selection_shown = false
-  panel.is_menu_selection_picking = false
-  panel.is_menu_reveal_pending = true
-
-
 func hideSelectionMenu*(panel: var Panel) =
   ## Put floating selection menu away, leaving selection alone.
   panel.is_menu_selection_shown = false
   panel.is_menu_selection_picking = false
-  panel.is_menu_reveal_pending = false
   panel.corner_menu_pointer = none(array[2, cfloat])
   panel.offset_menu_selection = none(array[2, cfloat])
 

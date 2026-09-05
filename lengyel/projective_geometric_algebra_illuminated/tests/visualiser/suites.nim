@@ -3563,29 +3563,6 @@ suite "Camera Aim":
     check isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
 
 
-  test "a tween is carrying from its offer until it arrives, and not after release":
-    # What selection menu waits on: opened while carrying, it glided off with object.
-    const DURATION = 0.35
-    var camera = placementAim(1.6, 0.2)
-    var tween: CameraTween
-    check not tween.isCarrying
-    let (scene, picked) = sceneOf(
-      toMultivector(Position(x: 14.0, y: -11.0, z: 3.0)),
-      toMultivector(Position(x: -9.0, y: 12.0, z: -5.0)),
-    )
-    tween.offerAim(
-      camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
-      WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION
-    )
-    check tween.isCarrying
-    tween.advance(camera, 0.5*DURATION, easeOutCubic)
-    check tween.isCarrying
-    tween.advance(camera, 1.5*DURATION, easeOutCubic)
-    check not tween.isCarrying
-    tween.release()
-    check not tween.isCarrying
-
-
   test "an aim widens by exactly the objects folded into it":
     let (a, b) = (Position(x: 3.0, y: 0.0, z: 0.0), Position(x: -3.0, y: 0.0, z: 0.0))
     let aim_one = none(CameraAim).aimIncluding(toMultivector(a), SCALE_AIM)
