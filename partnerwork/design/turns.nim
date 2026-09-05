@@ -1,181 +1,192 @@
-## Ask the rope model for a couple at any turn, from the drawn page.
+## Ask the body sim for every hold turning, and write it down for the page.
 ##
 ##   The whole-cloth page animates a hold turning, and the one honest way to
-##     animate two bodies and a rope is to ask the thing that models them.
-##     This module compiles to JavaScript and is spliced into the page by
-##     `nimble turns`; the page calls it once per frame and draws what comes
-##     back -- where the bodies stand, where each hand is anchored, and the
-##     rope's plan path as the model lays it.  Nothing about the physics is
-##     guessed on the page: which body a rope hugs, how far round, and where
-##     it runs out are all read from here.
+##     animate two bodies and their arms is to ask the thing that models
+##     them.  Solving a pose is too slow to do in a browser at every frame,
+##     so this program runs the sim natively, sweeps every hold at every
+##     height, and writes every moment of every sweep as data; the page only
+##     draws.  Nothing about the physics is guessed on the page: where each
+##     joint is, which way an arm lies, and where a turn runs out are all
+##     read from here.
 ##   The design directory may import the sim; the sim imports nothing back.
-##     The words (wrap, lock, low, high) are put on here, as `sim/verdicts`
-##     does, so the model itself stays vocabulary-free.
-##   Two rests, both the page's own choice: the cross-name holds rest face
-##     to face, and the same-name holds are also built face to face so the
+##     The words (wrap, lock, low, high, led) are put on here, as
+##     `sim/verdicts` does, so the model itself stays vocabulary-free.
+##   Two rests, both the page's own choice: the cross-name holds rest face to
+##     face, and the same-name holds are also built face to face so the
 ##     turns count as the sheet counts (the away rest is a half turn along).
-##     The same-name *pair* is the exception: face to face its two ropes
-##     lie through each other and the model refuses it before anything has
-##     turned, so it is built at the away rest -- collected there, as a
-##     couple would -- and its turns count from that rest.
+##     The same-name *pair* is the exception: face to face its two
+##     connections lie through each other, so it is built at the away rest
+##     -- collected there, as a couple would -- and its turns count from it.
+
+{.experimental: "strictFuncs".}
 
 import std/[json, math, options, strutils]
 
-import ../sim/rope
+import ../sim/[body, limb, read, rig, solve, sweep, vec]
 
 
 const
   APART = 0.40 ## The stance, in metres: the same one `sim/verdicts` asks at.
-  LOW = 1.20
-  HIGH = 1.53
-  ABOVE = 1.82
-  MOST = 2.5 ## Turns swept each way looking for the block.
-
-
-func heightOf(level: string): float =
-  case level
-  of "low": LOW
-  of "high": HIGH
-  else: ABOVE
+  HOLDS = ["L-l", "R-r", "L-r", "R-l", "L-l.R-r", "L-r.R-l"]
+  BANDS = [("low", Band.Torso), ("high", Band.Neck), ("above", Band.Crown)]
 
 
 func armsOf(hold: string): seq[(Arm, Arm)] =
-  ## Read "L-l" or "L-r.R-l": the lead's hand in capitals, the follow's in lower case.
+  ## Read "L-l" or "L-r.R-l": the lead's hand in capitals, the follow's in
+  ## lower case.
   for part in hold.split('.'):
     let
       a = if part[0] == 'L': Arm.Left else: Arm.Right
       b = if part[2] == 'l': Arm.Left else: Arm.Right
     result.add (a, b)
 
-
 func sameName(hold: string): bool =
   for (a, b) in armsOf(hold):
     if a != b: return false
   true
 
-
-func rested(hold, level: string): State =
+func rested(hold: string; band: Band): State =
   ## Build the hold at the rest its turns are counted from.
-  result = facing(HUMAN, APART)
+  result = State(rig: HUMAN, stance: facing(HUMAN, APART), band: band)
   if hold.contains('.') and sameName(hold):
-    # Turned away by the half turn that *uncrosses* a same-name pair: the
-    # model reads the face-to-face X as crossed anticlockwise, so the
-    # parallel rest lies a half turn clockwise of it.  Set the other way
-    # the braid would read the pair as crossed twice.
     result.stance[Body.Two].facing = result.stance[Body.Two].facing - PI
   for (a, b) in armsOf(hold):
-    result.links.add Link(ends: [(Body.One, a), (Body.Two, b)],
-                          height: heightOf(level))
-  result = settled(result)
+    result.links.add Link(ends: [(Body.One, a), (Body.Two, b)])
 
 
-func said(lying: Option[Lying]): string =
-  ## Write where a wound arm lies, in the sheet's words -- the one translation.
+func said(lying: Option[Lying]; band: Band): string =
+  ## Write where a held arm lies, in the sheet's words -- the one translation.
+  if band == Band.Crown:
+    return "above"
   if lying.isNone:
     return "open"
   let
     way = if lying.get.aspect == Aspect.Fore: "wrap" else: "lock"
-    band = if lying.get.band == Band.Torso: "low" else: "high"
-    laps = if lying.get.laps > 0: " +" & $lying.get.laps & " lap" else: ""
-    held = if lying.get.wound: "" else: " (led)"
-  way & " " & band & laps & held
+    at = if lying.get.band == Band.Torso: "low" else: "high"
+    held = if lying.get.pressing: "" else: " (led)"
+  way & " " & at & held
+
+func dofName(dof: Dof): string =
+  case dof
+  of Dof.Extend: "shoulder, behind"
+  of Dof.Across: "shoulder, across"
+  of Dof.Twist: "shoulder, twist"
+  of Dof.Bend: "elbow"
+  of Dof.Wrist: "wrist"
+
+func whose(s: State; link, arm: int): string =
+  if s.links[link].ends[arm].body == Body.One: "his" else: "her"
+
+func why(s: State; v: Verdict): string =
+  ## Say what refuses, in the few words a page can show.
+  case v.reason
+  of Reason.None: "holds"
+  of Reason.Reach: whose(s, v.link, v.arm) & " reach"
+  of Reason.Shoulder, Reason.Twist, Reason.Elbow, Reason.Wrist:
+    whose(s, v.link, v.arm) & " " & dofName(v.dof)
+  of Reason.Through:
+    let part = case v.part
+      of Part.Torso: "torso"
+      of Part.Neck: "neck"
+      of Part.Head: "head"
+    whose(s, v.link, v.arm) & " arm through " &
+      (if v.whose == Body.One: "his " else: "her ") & part
+  of Reason.Arms: "arm through arm"
+  of Reason.Band: "the hands out of their height"
+
+func strained(s: State; v: Verdict): string =
+  ## Name the joint nearest its edge.
+  if v.n == 0: return ""
+  var worst = -1.0
+  for i in 0 ..< v.n:
+    if v.fits[i].strain > worst:
+      worst = v.fits[i].strain
+      result = whose(s, i, v.fits[i].strainedArm) & " " & dofName(v.fits[i].strainedDof)
 
 
-func short(state: State): string =
-  ## Say the verdict in the few words a page can show.
-  let refusing = refusal(state)
-  if refusing.isNone:
-    return "holds"
-  case refusing.get
-  of Fault.Tangent: "cannot be laid"
-  of Fault.Through: "through a body"
-  of Fault.Budget: "out of rope"
-  of Fault.Braided: "rope through rope"
-  of Fault.Swan: "past the swan"
+func mm(p: Vec): JsonNode =
+  %*[int(round(p.x * 1000.0)), int(round(p.y * 1000.0)), int(round(p.z * 1000.0))]
 
-
-func at(hold, level: string; turn: float): State =
-  let base = rested(hold, level)
-  if abs(turn) < 1e-9: base
-  else: turned(base, Body.Two, turn * 2.0 * PI)
-
-
-func vecJson(v: Vec): JsonNode = %*[v.x, v.y]
-
-
-proc turnScene(hold, level: cstring; turn: float): cstring {.exportc.} =
-  ## Give the couple at a turn, as JSON the page draws from.
-  let s = at($hold, $level, turn)
-  var j = %*{
-    "verdict": short(s),
-    "bodies": [
-      {"centre": vecJson(s.stance[Body.One].centre),
-       "facing": s.stance[Body.One].facing},
-      {"centre": vecJson(s.stance[Body.Two].centre),
-       "facing": s.stance[Body.Two].facing}],
-    "anchors": {
-      "him": {"L": vecJson(anchor(s, (Body.One, Arm.Left))),
-              "R": vecJson(anchor(s, (Body.One, Arm.Right)))},
-      "her": {"L": vecJson(anchor(s, (Body.Two, Arm.Left))),
-              "R": vecJson(anchor(s, (Body.Two, Arm.Right)))}},
-    "torso": s.rig.torso,
-    "links": []}
-  for link in s.links:
-    var lj = %*{
-      "her": said(lyingOn(s, link, Body.Two)),
-      "him": said(lyingOn(s, link, Body.One)),
-      "pts": []}
-    let laid = lay(s, link)
-    if laid.isSome:
-      lj["length"] = %laid.get.length
-      lj["braided"] = %braidedLie(laid.get)
-      for p in traced(s, link, laid.get).at:
-        lj["pts"].add vecJson(p)
-    j["links"].add lj
-  j["budget"] = %budget(s.rig)
-  cstring($j)
-
-
-func limitWay(base: State; sign: float): float =
-  ## Sweep one way until a connection refuses; the turn reached, in turns.
-  ##   `windLimit` sweeps one way only, so the other way is swept here the
-  ##     same way it does: forward in steps, then bisected inside the step
-  ##     that failed.
-  const STEP = 0.05
-  var
-    went = 0.0
-    here = base
-  if not holds(here):
-    return 0.0
-  while went < MOST * 2.0 * PI:
-    let next = turned(here, Body.Two, sign * STEP, STEP)
-    if not holds(next):
-      var
-        lo = 0.0
-        hi = STEP
-      for _ in 0 ..< 20:
-        let mid = (lo + hi) / 2.0
-        if holds(turned(here, Body.Two, sign * mid, STEP)): lo = mid
-        else: hi = mid
-      return (went + lo) / (2.0 * PI)
-    here = next
-    went += STEP
-  MOST
-
-
-proc turnLimits(hold, level: cstring): cstring {.exportc.} =
-  ## Say how far the follow can turn each way before the rope refuses.
-  ##   Swept with the swan limit on: the page is asked to block where a
-  ##     dancer would be blocked, and the pair's twist is one of those places.
-  let base = rested($hold, $level)
+func frame(m: Moment; band: Band): JsonNode =
   let
-    pos = limitWay(base, 1.0)
-    neg = limitWay(base, -1.0)
-  var why = "holds"
-  if pos < MOST:
-    why = short(turned(base, Body.Two, (pos + 0.02) * 2.0 * PI))
-  var whyNeg = "holds"
-  if neg < MOST:
-    whyNeg = short(turned(base, Body.Two, -(neg + 0.02) * 2.0 * PI))
-  cstring($(%*{"pos": pos, "neg": neg, "why": why, "whyNeg": whyNeg,
-               "restVerdict": short(base)}))
+    s = m.state
+    v = m.verdict
+  result = %*{
+    "t": round(m.turn * 1000.0) / 1000.0,
+    "ok": v.ok,
+    "reseed": m.reseeded,
+    "strain": round(v.strain * 100.0) / 100.0,
+    "worst": strained(s, v),
+    "bodies": [
+      {"c": [int(round(s.stance[Body.One].centre.x * 1000.0)),
+             int(round(s.stance[Body.One].centre.y * 1000.0))],
+       "f": round(s.stance[Body.One].facing * 1000.0) / 1000.0},
+      {"c": [int(round(s.stance[Body.Two].centre.x * 1000.0)),
+             int(round(s.stance[Body.Two].centre.y * 1000.0))],
+       "f": round(s.stance[Body.Two].facing * 1000.0) / 1000.0}],
+    "cn": []}
+  let cross = crossings(s, v)
+  for i in 0 ..< v.n:
+    let
+      him = v.fits[i].arms[armOf(s, i, Body.One)]
+      her = v.fits[i].arms[armOf(s, i, Body.Two)]
+    var cj = %*{
+      "him": [mm(him.s), mm(him.e), mm(him.w), mm(him.g)],
+      "her": [mm(her.g), mm(her.w), mm(her.e), mm(her.s)],
+      "himSays": said(lyingOn(s, v, i, Body.One), band),
+      "herSays": said(lyingOn(s, v, i, Body.Two), band)}
+    if i == 0 and cross.len > 0:
+      var overs = newJArray()
+      for c in cross:
+        overs.add %*{"at": [int(round(c.at.x * 1000.0)), int(round(c.at.y * 1000.0))], "over": c.over}
+      cj["cross"] = overs
+    result["cn"].add cj
+
+
+proc sweepJson(hold: string; word: string; band: Band): JsonNode =
+  let
+    rest = rested(hold, band)
+    sw = swept(rest, Body.Two)
+  result = %*{
+    "restHolds": sw.restHolds,
+    "neg": round(sw.neg.at * 1000.0) / 1000.0,
+    "pos": round(sw.pos.at * 1000.0) / 1000.0,
+    "stoppedNeg": sw.neg.stopped,
+    "stoppedPos": sw.pos.stopped,
+    "whyNeg": (if sw.neg.stopped: why(sw.rest, sw.neg.why) else: "no block"),
+    "why": (if sw.pos.stopped: why(sw.rest, sw.pos.why) else: "no block"),
+    "foundNeg": sw.neg.foundAnyway,
+    "foundPos": sw.pos.foundAnyway,
+    "frames": []}
+  for m in sw.moments:
+    result["frames"].add frame(m, band)
+  stderr.writeLine hold & " " & word & ": -" & $sw.neg.at & " +" & $sw.pos.at &
+    " (" & $sw.moments.len & " moments)"
+
+
+proc bridge(): JsonNode =
+  result = %*{
+    "apart": int(round(APART * 1000.0)),
+    "step": STEP,
+    "most": MOST,
+    "rig": {
+      "torsoAcross": int(round(halfBreadth(HUMAN, Part.Torso) * 1000.0)),
+      "torsoDeep": int(round(halfDepth(HUMAN, Part.Torso) * 1000.0)),
+      "neck": int(round(halfBreadth(HUMAN, Part.Neck) * 1000.0)),
+      "head": int(round(halfBreadth(HUMAN, Part.Head) * 1000.0)),
+      "shoulder": int(round(HUMAN.shoulderOut * 1000.0)),
+      "limb": int(round(HUMAN.limb * 1000.0)),
+      "z": {"hip": int(round(HUMAN.hip * 1000.0)),
+            "torso": int(round(HUMAN.top[Part.Torso] * 1000.0)),
+            "neck": int(round(HUMAN.top[Part.Neck] * 1000.0)),
+            "head": int(round(HUMAN.top[Part.Head] * 1000.0)),
+            "shoulder": int(round(HUMAN.shoulderUp * 1000.0))}},
+    "sweeps": {}}
+  for hold in HOLDS:
+    for (word, band) in BANDS:
+      result["sweeps"][hold & "|" & word] = sweepJson(hold, word, band)
+
+
+when isMainModule:
+  writeFile("design/turns.js", "var TURNS = " & $bridge() & ";\n")
+  echo "wrote design/turns.js"

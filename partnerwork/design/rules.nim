@@ -425,8 +425,9 @@ const RULES* = [
   ##     the back up to its own shoulder, a hammerlock -- so the settle
   ##     table's `(Own, Back)` stands.  The entry note is a transition
   ##     fact, the first the ledger has that is about safety rather than
-  ##     shape; the sim reads it geometrically in `sim/verdicts.md` and
-  ##     finds the wound low lock holds at the height it is formed at.
+  ##     shape; `sim/verdicts.md` records what the jointed-arm sim makes of
+  ##     the low lock: the hand led behind the back at the whole turn, the
+  ##     block just past it.
   ##   Rule 38's under-or-over the *other* arm is a mark no drawing here
   ##     makes yet: a settled reach bends around the hands it does not join
   ##     (rule 22), so the crossing a wrap makes with its dancer's other
@@ -439,13 +440,13 @@ const RULES* = [
   ##     and settles only the follow, which covers the sheet's validated
   ##     rows but not its enumeration; widening it is a restructure, noted
   ##     in the README's open questions rather than done quietly here.
-  ##   Rule 40 is the sheet's one filled rotation row, and the sim derives
-  ##     it independently (`sim/verdicts.md`): from Left to left held low,
-  ##     half a turn one way lies the arm across the front -- the wrap --
-  ##     while the lock takes a *whole* turn the other way, the rope
-  ##     merely leading the hand behind the back at its half.  The row and
-  ##     the rope agree, laps and all, and neither was told the other's
-  ##     answer.
+  ##   Rule 40 is the sheet's one filled rotation row, and the sim asks it
+  ##     independently (`sim/verdicts.md`): from Left to left held low, the
+  ##     jointed-arm sim reads the lock way as the row does -- the hand led
+  ##     behind the back, the whole turn reached -- and blocks the wrap way
+  ##     at three tenths of a turn, at his shoulder's twist, short of the
+  ##     row's half.  The one place the row and the sim differ, recorded;
+  ##     neither was told the other's answer.
 
 
 const FROM_ABOVE*: array[2, tuple[level: Option[Level], way: Option[Way]]] = [

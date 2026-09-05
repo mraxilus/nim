@@ -56,14 +56,15 @@ and are not listed: the git history is the record of what they claimed.
 
 `wholecloth.html` is the one hand-drawn page: the ontology redrawn from the
 ground up and reviewed plate by plate.  Its one generated part is the turns
-panel, which animates a hold turning by running the body sim itself in the
-browser -- `turns.nim` compiles `../sim/rope` to JavaScript and answers, per
-frame, where the bodies stand, where each hand is anchored, the rope's plan
-path and its verdict; the page only draws.  The turn stops where the rope
-refuses.  Rebuild and splice it with:
+panel, which animates a hold turning by drawing what the body sim found --
+`turns.nim` runs `../sim` natively, sweeps every hold at every height a
+fiftieth of a turn at a time, and writes every moment as data: where the
+bodies stand, where each joint of each held arm is, which way each arm lies,
+and where the turn runs out and why; the page only draws.  The turn stops
+where a joint or a body refuses.  Rebuild and splice it with:
 
 ```
-nimble turns                            # compiles design/turns.nim, splices it into wholecloth.html
+nimble turns                            # sweeps with design/turns.nim, splices the result into wholecloth.html
 ```
 
 `turns.js` is the build's intermediate and is not committed; the spliced page

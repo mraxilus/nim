@@ -251,8 +251,10 @@ src/partnerwork/draw/           the shared drawing chain: geometry, style, pose,
                                 body, figure, route, scene, and its own terms
 app/                            the browser validator
 design/                         the mock-up workbench: rules first, pages after
-sim/                            the body sim: two cylinders and rope, standalone,
-                                sharing no code with any of the above on purpose
+sim/                            the body sim: two bodies of the average adult's
+                                measurements, arms with shoulder, elbow and
+                                wrist, standalone, sharing no code with any of
+                                the above on purpose
 tools/audit.nim                 the same audit, printed
 tools/review.nim                writes the review page from the model
 tests/                          the laws, checked over every pair of frames

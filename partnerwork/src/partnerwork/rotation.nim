@@ -107,23 +107,31 @@ const
     ##   An earlier body sim claimed to derive this and did not: it priced a
     ##     wound half turn at half a torso's girth by assumption, so the
     ##     arithmetic only returned the measurement it was fitted to.  The
-    ##     sim that actually turns a body now agrees from its own geometry
-    ##     (`sim/verdicts.md`: the low wrap holds at half a turn and runs
-    ##     out of rope at a whole one) -- an independent witness, not a
-    ##     derivation; the constant stays the dance's own measurement.
+    ##     jointed-arm sim, which turns a body and lets the arms take the
+    ##     most comfortable pose that holds, finds hand to hand's low wrap
+    ##     blocking just past the half (0.56 turns) and Left to left's short
+    ##     of it (0.30), at the shoulder's twist (`sim/verdicts.md`) -- an
+    ##     independent witness, not a derivation, and it agrees on the one
+    ##     and not the other; the constant stays the dance's measurement.
   CAPACITY_ARM* = 2
     ## Hold a full turn while the arm is anywhere else.  Measured for a low
     ## lock; assumed for the two high ones, which is the next thing to dance.
-    ##   The sim agrees on all three from its own geometry
-    ##     (`sim/verdicts.md`): the wound low lock arrives at exactly a full
-    ##     turn, and at the neck both wrap and lock still hold there.
+    ##   The jointed-arm sim (`sim/verdicts.md`) finds Left to left's low
+    ##     lock reaching the whole turn, led, and blocking just past it
+    ##     (1.12), hand to hand's blocking short of it (0.87); at the neck it
+    ##     finds a turn and more one way and under a half the other, the
+    ##     elbows already folded to their limit at rest with the chests as
+    ##     close as the stance puts them.  A disagreement, recorded rather
+    ##     than resolved; the constant stays the dance's measurement.
   ABOVE_BLOCKS* = false
     ## Whether an arm over the head blocks a turn.  It does in some cases and
     ## nobody has said which, so the model turns freely there.
-    ##   No longer on no authority for a single connection: the sim finds an
-    ##     arm above the crown winds nothing and holds through two whole
-    ##     turns either way (`sim/verdicts.md`).  Two connections above are
-    ##     another matter -- they braid -- and rule 13's swan is their
+    ##   No longer on no authority for a single connection: the jointed-arm
+    ##     sim finds a hand held over the follow's head turns with her, and
+    ##     holds through two and a half turns either way (`sim/verdicts.md`).
+    ##     Two connections above are another matter -- the sim finds the
+    ##     parallel pair free one way and blocked at a whole turn the other,
+    ##     the crossed pair at three quarters -- and rule 13's swan is their
     ##     asserted ceiling, so the flag stays a flag.
 
 

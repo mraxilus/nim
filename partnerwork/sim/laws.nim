@@ -1,467 +1,366 @@
-## Hold the body sim to what bodies and rope actually do.
+## What the body sim is held to.
 ##
-## Every law here is about two cylinders and a piece of string.  Nothing in
-## this file names a frame, a move, a hold or a hand of a *dancer*, and
-## nothing imports the ontology -- which is the point of the module and is
-## checkable at a glance from the single import below.  What the sim says
-## about the notation is a question for later and for somewhere else.
-##
-## The laws that matter most are the ones the sim's predecessor could not
-## have passed: that turning a body winds the rope onto it, that the winding
-## has a length *and a place*, and that turning back gives the rope back.
+##   Every law here is about bodies, joints and arms, and none is about the
+##     dance: the sim is a witness, and a witness that has been told what to
+##     say is no witness.  The floor's own claims are printed beside what the
+##     sim says and only asserted to be *decided*; `-d:floorIsLaw` makes them
+##     hard, for whoever wants to run the floor as a law.
+##   The sweeps are computed once and shared by the suites: they are the
+##     slow part, and the laws are about their every moment.
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options, unittest]
+import std/[math, options, random, strformat, strutils, unittest]
 
-import ./rope
+import ./[body, contact, limb, read, rig, solve, sweep, vec]
 
 
 const
-  APART = 0.34            ## A stance with the rims a centimetre or two clear.
-  LOW = HUMAN.shoulder    ## Hands carried where they hang.
-  HIGH = HUMAN.crown + 0.15 ## And carried clear over both crowns.
+  APART = 0.40
+  LEFT = Arm.Left
+  RIGHT = Arm.Right
 
 
-func oneLink(apart: float; a, b: Arm; height = LOW): State =
-  ## Stand two bodies facing, joined by one connection.
-  result = facing(HUMAN, apart)
-  result.links = @[Link(ends: [(Body.One, a), (Body.Two, b)], height: height)]
+func oneLink(a, b: Arm; band: Band; apart = APART; away = false): State =
+  ## Stand the couple square with one connection, One's `a` to Two's `b`.
+  result = State(rig: HUMAN, stance: facing(HUMAN, apart), band: band,
+                 links: @[Link(ends: [(Body.One, a), (Body.Two, b)])])
+  if away:
+    result.stance[Body.Two].facing -= PI
+
+func twoLinks(a, b, c, d: Arm; band: Band; away = false): State =
+  ## Both hands held: One's `a` to Two's `b`, One's `c` to Two's `d`.
+  result = State(rig: HUMAN, stance: facing(HUMAN, APART), band: band,
+                 links: @[Link(ends: [(Body.One, a), (Body.Two, b)]),
+                          Link(ends: [(Body.One, c), (Body.Two, d)])])
+  if away:
+    result.stance[Body.Two].facing -= PI
+
+func deg(r: float): string = $int(round(r * 180.0 / PI))
+
+proc turns(x: float): string = formatFloat(x, ffDecimal, 2)
+
+
+#[ The Sweeps, Once ]#
+
+
+let
+  llTorso = swept(oneLink(LEFT, LEFT, Band.Torso), Body.Two)
+  llNeck = swept(oneLink(LEFT, LEFT, Band.Neck), Body.Two)
+  llCrown = swept(oneLink(LEFT, LEFT, Band.Crown), Body.Two)
+  lrTorso = swept(oneLink(LEFT, RIGHT, Band.Torso), Body.Two)
+  lrNeck = swept(oneLink(LEFT, RIGHT, Band.Neck), Body.Two)
+  lrCrown = swept(oneLink(LEFT, RIGHT, Band.Crown), Body.Two)
+  rrTorso = swept(oneLink(RIGHT, RIGHT, Band.Torso), Body.Two)
+  rlTorso = swept(oneLink(RIGHT, LEFT, Band.Torso), Body.Two)
+  llByOne = swept(oneLink(LEFT, LEFT, Band.Torso), Body.One)
+  pairTorso = swept(twoLinks(LEFT, RIGHT, RIGHT, LEFT, Band.Torso), Body.Two)
+  crossedTorso = swept(twoLinks(LEFT, LEFT, RIGHT, RIGHT, Band.Torso, away = true), Body.Two)
+  SWEEPS = [("L-l torso", llTorso), ("L-l neck", llNeck), ("L-l crown", llCrown),
+            ("L-r torso", lrTorso), ("L-r neck", lrNeck), ("L-r crown", lrCrown),
+            ("R-r torso", rrTorso), ("R-l torso", rlTorso), ("L-l by One", llByOne),
+            ("L-r.R-l torso", pairTorso), ("L-l.R-r torso, away", crossedTorso)]
+
+
+#[ The Rig ]#
 
 
 suite "the rig":
-  test "a body is as wide as whatever part of it the rope passes":
-    # The whole of what carrying a connection over someone's head is: at a
-    # height above the crown there is nothing left to go round.
-    check girth(HUMAN, 0.0) == HUMAN.torso
-    check girth(HUMAN, HUMAN.shoulder) == HUMAN.torso
-    check girth(HUMAN, (HUMAN.shoulder + HUMAN.crown) / 2) == HUMAN.head
-    check girth(HUMAN, HUMAN.crown + 0.01) == 0.0
+  test "a body's rounds are the tape's, and the radii follow":
+    for part in Part:
+      let
+        a = halfBreadth(HUMAN, part)
+        b = halfDepth(HUMAN, part)
+        h = ((a - b) / (a + b)) ^ 2
+        round = PI * (a + b) * (1.0 + 3.0 * h / (10.0 + sqrt(4.0 - 3.0 * h)))
+      check abs(round - HUMAN.round[part]) < 1e-3
+    check abs(halfBreadth(HUMAN, Part.Neck) - HUMAN.round[Part.Neck] / (2.0 * PI)) < 1e-9
+    check halfDepth(HUMAN, Part.Torso) < halfBreadth(HUMAN, Part.Torso)
 
-  test "two bodies cannot stand closer than their rims":
-    check touching(HUMAN) == 2.0 * HUMAN.torso
+  test "the reach is the three links, and the bands are ordered":
+    check abs(reach(HUMAN) - 0.64) < 1e-9
+    check HUMAN.band[Band.Torso].hi < HUMAN.band[Band.Neck].lo
+    check HUMAN.band[Band.Neck].hi <= HUMAN.band[Band.Crown].lo
+    check HUMAN.band[Band.Crown].lo >= HUMAN.top[Part.Head] + HUMAN.limb - 1e-9
+    for part in Part:
+      check rig.bottom(HUMAN, part) < HUMAN.top[part]
+
+  test "the shoulder stands outside its own torso, and a hanging arm clears it":
+    check HUMAN.shoulderOut > halfBreadth(HUMAN, Part.Torso)
+    let st = facing(HUMAN, APART)[Body.One]
+    for arm in Arm:
+      let s = shoulder(HUMAN, st, arm)
+      check bodyGap(HUMAN, st, s, lifted(s, -HUMAN.upper), own = true).gap >= 0.0
+
+  test "two bodies cannot stand closer than their chests":
+    check abs(touching(HUMAN) - 2.0 * halfDepth(HUMAN, Part.Torso)) < 1e-9
 
   test "a hand is a quarter turn off the way its body faces":
-    # Every consequence of two people facing one another comes out of this
-    # one line, so it is worth pinning: standing face to face, one body's
-    # left hand is across from the other's right.
-    let s = facing(HUMAN, APART)
-    check abs(anchor(s, (Body.One, Arm.Left)).x + HUMAN.torso) < 1e-12
-    check abs(anchor(s, (Body.Two, Arm.Right)).x + HUMAN.torso) < 1e-12
-    check abs(anchor(s, (Body.One, Arm.Right)).x - HUMAN.torso) < 1e-12
-    check abs(anchor(s, (Body.Two, Arm.Left)).x - HUMAN.torso) < 1e-12
+    let st = facing(HUMAN, APART)
+    let l1 = shoulder(HUMAN, st[Body.One], LEFT)
+    let l2 = shoulder(HUMAN, st[Body.Two], LEFT)
+    check abs(l1.x + HUMAN.shoulderOut) < 1e-9 and abs(l1.y) < 1e-9
+    check abs(l2.x - HUMAN.shoulderOut) < 1e-9 and abs(l2.y - APART) < 1e-9
+    check abs(l1.z - HUMAN.shoulderUp) < 1e-9
 
 
-suite "a rope at rest":
-  test "a rope between facing shoulders runs straight, and is the gap long":
-    let s = oneLink(APART, Arm.Left, Arm.Right)
-    let laid = lay(s, s.links[0]).get
-    check laid.hugs == 0
-    check abs(laid.span - APART) < 1e-12
-    check abs(laid.length - APART) < 1e-12
-
-  test "a rope that would run through a chest bends around it instead":
-    # Joining two hands on the same side means the straight way passes
-    # through both bodies, so there is no straight way and the taut rope
-    # hugs what is in the road.  Nothing tells it to; the winding it is
-    # carrying is what it caught while the bodies turned into that hold.
-    let s = turned(oneLink(APART, Arm.Left, Arm.Right), Body.Two, PI / 2)
-    let laid = lay(s, s.links[0]).get
-    check laid.hugs > 0
-    check clearance(s, s.links[0], laid) > -1e-9
-
-  test "nothing passes through a body at any turn of one":
-    for step in 0 .. 20:
-      let s = turned(oneLink(APART, Arm.Left, Arm.Right), Body.Two,
-        PI * float(step) / 10.0)
-      let laid = lay(s, s.links[0])
-      if laid.isSome:
-        check clearance(s, s.links[0], laid.get) > -1e-6
-
-  test "raising the joined hands costs rope, and costs it as a tent":
-    # The hands ride at the middle of the rope, so lifting them is a climb up
-    # from one shoulder and down to the other.
-    let
-      flat = oneLink(APART, Arm.Left, Arm.Right)
-      raised = oneLink(APART, Arm.Left, Arm.Right, LOW + 0.2)
-      a = lay(flat, flat.links[0]).get
-      b = lay(raised, raised.links[0]).get
-    check abs(a.span - b.span) < 1e-12
-    check b.length > a.length
-    check abs(b.length - sqrt(a.span * a.span + 4.0 * 0.2 * 0.2)) < 1e-12
+#[ One Arm ]#
 
 
-suite "turning winds the rope":
-  test "a turn puts the rope on the body, and the rope stays on it":
-    # The law the sim exists for, and the one its predecessor could not state:
-    # after a turn the rope is somewhere it was not, and it is longer for it.
-    let
-      base = oneLink(APART, Arm.Left, Arm.Right)
-      rest = lay(base, base.links[0]).get
-      spun = turned(base, Body.Two, PI)
-      after = lay(spun, spun.links[0]).get
-    check after.hugs > rest.hugs
-    check after.span > rest.span + 0.1
+suite "one arm, forward and back":
+  let st = facing(HUMAN, APART)[Body.One]
 
-  test "a whole turn costs the girth it wound onto, and no more":
-    # The price the old model assumed, now falling out: what a turn adds is
-    # the arc it laid on the rim, which is the radius times the angle.
-    let base = oneLink(APART, Arm.Left, Arm.Right)
-    var last = -1.0
-    for turn in 1 .. 3:
+  test "the elbow keeps both lengths on every swivel":
+    var rng = initRand(7)
+    for _ in 0 ..< 200:
       let
-        one = turned(base, Body.Two, PI * float(turn))
-        two = turned(base, Body.Two, PI * float(turn + 1))
-        a = lay(one, one.links[0])
-        b = lay(two, two.links[0])
-      if a.isNone or b.isNone:
-        continue
-      let grew = b.get.span - a.get.span
-      # Half a turn of the follow lays half that body's circumference on.
-      check abs(grew - PI * HUMAN.torso) < 5e-3
-      if last > 0.0:
-        check abs(grew - last) < 5e-3
-      last = grew
+        s = shoulder(HUMAN, st, LEFT)
+        g = s + (rng.rand(-0.5 .. 0.5), rng.rand(-0.5 .. 0.5), rng.rand(-0.5 .. 0.3))
+        h = unit((rng.rand(-1.0 .. 1.0), rng.rand(-1.0 .. 1.0), rng.rand(-1.0 .. 1.0)))
+        c = posed(HUMAN, s, g, h, rng.rand(0.0 .. 2.0 * PI))
+      if c.stretch <= HUMAN.upper + HUMAN.fore and c.stretch >= abs(HUMAN.upper - HUMAN.fore):
+        check abs(dist(c.pose.s, c.pose.e) - HUMAN.upper) < 1e-9
+        check abs(dist(c.pose.e, c.pose.w) - HUMAN.fore) < 1e-9
+      check abs(dist(c.pose.w, c.pose.g) - HUMAN.hand) < 1e-9
 
-  test "the winding is counted, so more turning is always more rope":
-    # A shortest path has no memory: at a whole turn it is the path it was at
-    # rest, and at two whole turns it is that path again.  This is the
-    # regression test against every model that searches for the rope instead
-    # of carrying it -- the span has to keep climbing, turn after turn.
-    let base = oneLink(APART, Arm.Left, Arm.Right)
-    var was = 0.0
-    for half in 0 .. 6:
-      let s = turned(base, Body.Two, PI * float(half))
-      let laid = lay(s, s.links[0]).get
-      if half >= 2:
-        # Once the rope has caught, every further half turn lays on more.
-        check laid.span > was + 0.4
-      was = laid.span
-    # And past a whole lap of the rim, the count has to have picked it up,
-    # because the geometry alone can only ever see the part-lap.
-    let far = turned(base, Body.Two, 3.0 * PI)
-    var laps = 0
-    for wind in far.links[0].winds:
-      laps += wind.turns
-    check laps >= 1
+  test "the joints read back what they were set to":
+    var worst = 0.0
+    for arm in Arm:
+      for az in [-60.0, -20.0, 20.0, 60.0, 120.0]:
+        for el in [-70.0, -30.0, 10.0, 50.0]:
+          for tw in [-50.0, 0.0, 60.0]:
+            for bend in [20.0, 70.0, 120.0]:
+              for wr in [0.0, 30.0]:
+                let
+                  u = unit((cos(el * PI / 180.0) * sin(az * PI / 180.0),
+                            cos(el * PI / 180.0) * cos(az * PI / 180.0),
+                            sin(el * PI / 180.0)))
+                  p = placed(HUMAN, st, arm, u, tw * PI / 180.0, bend * PI / 180.0,
+                             wr * PI / 180.0, 0.7)
+                  j = joints(st, arm, p)
+                worst = max(worst, abs(j.twist - tw * PI / 180.0))
+                worst = max(worst, abs(j.bend - bend * PI / 180.0))
+                worst = max(worst, abs(j.wrist - wr * PI / 180.0))
+                worst = max(worst, abs(sin(j.elev) - u.z))
+                worst = max(worst, abs(-sin(j.extend) - u.y))
+                worst = max(worst, abs(-sin(j.across) - u.x))
+    check worst < 1e-6
 
-  test "turning back gives the rope back, to the last decimal":
-    # Only the whole turns are remembered; where the rope leaves a rim is
-    # worked out afresh every step.  So a turn out and back does not drift,
-    # and the same angle always gives the same state however it was reached.
-    let
-      base = oneLink(APART, Arm.Left, Arm.Right)
-      rest = lay(base, base.links[0]).get
-      there = turned(base, Body.Two, PI)
-      back = turned(there, Body.Two, -PI)
-      home = lay(back, back.links[0]).get
-    check abs(home.span - rest.span) < 1e-9
-    check back.links[0].winds.len == base.links[0].winds.len
-
-  test "the same angle gives the same state, whatever the step":
-    # The winding underneath is path-dependent and has to be.  Replaying the
-    # whole turn from rest every time is what keeps that from reaching the
-    # surface, and this is what says it worked: five step sizes across a
-    # factor of thirty, one answer.
-    #   Asked out to two turns and not just one, because it is the laps that
-    #   a coarse step would drop, and at half a turn there are none to drop.
-    #   This is also what lets the step be coarse: it is replayed on every
-    #   frame of a drag, so a finer one than the answer needs is just a
-    #   slower page.
-    for turns in [0.5, 1.4, 2.0]:
-      var spans: seq[float]
-      var laps: seq[int]
-      for step in [0.30, 0.15, 0.10, 0.05, 0.01]:
-        let s = turned(oneLink(APART, Arm.Left, Arm.Right), Body.Two,
-          turns * 2.0 * PI, step)
-        spans.add lay(s, s.links[0]).get.span
-        var round = 0
-        for wind in s.links[0].winds:
-          round += wind.turns
-        laps.add round
-      for i in 0 ..< spans.len:
-        # The laps have to match exactly -- they are the memory, and dropping
-        # one is the failure this guards against.  The spans match to a
-        # tolerance and not to the bit, because a facing is reached by adding
-        # `to / steps` that many times, and the last bits of that sum depend
-        # on how many steps there were.  Asking for equality here would be
-        # asking floating point for something it does not owe.
-        check abs(spans[i] - spans[0]) < 1e-9
-        check laps[i] == laps[0]
-
-
-suite "what the rope will not do":
-  test "there is a turn it runs out at, and it is swept, not assumed":
-    # Nothing in the module holds this number.  It is found by turning until
-    # a connection first refuses, so it is a consequence of the arm and the
-    # girth rather than a constant fitted to them.
-    let base = oneLink(APART, Arm.Left, Arm.Right)
-    let limit = windLimit(base, Body.Two)
-    check limit > 0.0
-    check limit < 4.0 * PI
-    check holds(turned(base, Body.Two, limit - 0.05))
-    check not holds(turned(base, Body.Two, limit + 0.05))
-
-  test "a longer arm reaches further round, and a wider body less far":
-    # The limit is a fact about the measurements, not about the model.  If
-    # these ever stop moving together, the sweep has stopped depending on
-    # the geometry and is reporting something it was told.
-    var longer = HUMAN
-    longer.arm = HUMAN.arm + 0.1
-    var thicker = HUMAN
-    thicker.torso = HUMAN.torso + 0.03
-    func limitFor(rig: Rig): float =
-      var s = facing(rig, APART)
-      s.links = @[Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Right)],
-                       height: rig.shoulder)]
-      windLimit(s, Body.Two)
-    check limitFor(longer) > limitFor(HUMAN)
-    check limitFor(thicker) < limitFor(HUMAN)
-
-  test "standing further apart spends rope that turning then cannot have":
-    let near = windLimit(oneLink(0.34, Arm.Left, Arm.Right), Body.Two)
-    let far = windLimit(oneLink(0.80, Arm.Left, Arm.Right), Body.Two)
-    check far < near
-
-
-suite "two ropes":
-  test "where two ropes cross, the higher one is over":
-    # Over and under is not a field anybody has to keep: two ropes that meet
-    # in plan are one above the other in fact, and which is which is read off
-    # the heights.
-    var s = facing(HUMAN, APART)
-    s.links = @[
-      Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Left)], height: LOW),
-      Link(ends: [(Body.One, Arm.Right), (Body.Two, Arm.Right)],
-           height: LOW + 0.25)]
-    let
-      a = lay(s, s.links[0])
-      b = lay(s, s.links[1])
-    check a.isSome and b.isSome
-    let met = meetings(s, s.links[0], a.get, s.links[1], b.get)
-    check met.len >= 1
-    for one in met:
-      check overOf(HUMAN, one) == some(1)
-
-  test "two ropes through each other leave the question open":
-    # Where a body has got in between, the two ropes are not braiding, and two
-    # ropes crossing at one height with no braid to order them are simply in
-    # the same place.  The model refuses that state -- and declines to say
-    # which of them is over, because there is nothing there to say it with.
-    #   Settled first, on purpose: a crossed hold at shoulder height runs
-    #   through both chests, so taking it is what puts the winding on and the
-    #   winding is what stops the pair braiding.
-    var s = facing(HUMAN, APART)
-    s.links = @[
-      Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Left)], height: LOW),
-      Link(ends: [(Body.One, Arm.Right), (Body.Two, Arm.Right)], height: LOW)]
-    let
-      here = settled(s)
-      a = lay(here, here.links[0]).get
-      b = lay(here, here.links[1]).get
-    check not braidedLie(a)
-    check not braidedLie(b)
-    let met = meetings(here, here.links[0], a, here.links[1], b)
-    check met.len >= 1
-    for one in met:
-      check overOf(HUMAN, one).isNone
-    check refusal(here, swan = false) == some(Fault.Braided)
-
-  test "ropes joining opposite hands never meet at all":
-    var s = facing(HUMAN, APART)
-    s.links = @[
-      Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Right)], height: LOW),
-      Link(ends: [(Body.One, Arm.Right), (Body.Two, Arm.Left)], height: LOW)]
-    let
-      a = lay(s, s.links[0]).get
-      b = lay(s, s.links[1]).get
-    check meetings(s, s.links[0], a, s.links[1], b).len == 0
-
-
-suite "two ropes braid":
-  func overhead(a0, b0, a1, b1: Arm; ha = HIGH; hb = HIGH): State =
-    ## Two connections carried over both crowns, where nothing is in the way.
-    result = facing(HUMAN, APART)
-    result.links = @[
-      Link(ends: [(Body.One, a0), (Body.Two, b0)], height: ha),
-      Link(ends: [(Body.One, a1), (Body.Two, b1)], height: hb)]
-
-  func rope(state: State): float =
-    ## Measure the rope the pair is spending between them.
-    ##   The pair's, not one rope's.  A braid puts one strand above the
-    ##     couple's height and the other below, so at any rung one of the two
-    ##     is climbing a little less than it would unbraided -- and asking
-    ##     that one alone whether braiding costs rope gets the answer no.
-    for link in state.links:
-      let laid = lay(state, link)
-      if laid.isSome:
-        result += laid.get.length
-
-  func crossings(state: State): int =
-    ## Count where the two ropes cross, off the drawn paths and nothing else.
-    let
-      a = lay(state, state.links[0])
-      b = lay(state, state.links[1])
-    if a.isNone or b.isNone: -1
-    else: meetings(state, state.links[0], a.get, state.links[1], b.get).len
-
-  test "the relative turn is read off the facings, laps and all":
-    # Nothing carries it.  A facing accumulates without wrapping, so the turn
-    # one body has made against the other has been in the state since the
-    # beginning -- and it has to survive past a whole turn, which is exactly
-    # what a wrapped reading would lose.
-    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
-    check abs(twist(base)) < 1e-12
-    for turns in [0.5, 1.0, 1.5, 2.0, -1.5]:
-      let s = turned(base, Body.Two, turns * 2.0 * PI)
-      check abs(twist(s) / (2.0 * PI) - turns) < 1e-9
-    # And turning the lead is the same turn the other way.
-    let back = turned(base, Body.One, 2.0 * PI)
-    check abs(twist(back) / (2.0 * PI) + 1.0) < 1e-9
-
-  test "the ladder: no twist, the X, the diamond, the swan":
-    # The rungs of it, counted off the drawn ropes rather than off the angle.
-    # Nothing in the module counts crossings; a cosine has that many zeroes.
-    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
-    for half in 0 .. 3:
-      let s = turned(base, Body.Two, PI * float(half))
-      check crossings(s) == half
-
-  test "a hold that joins hands of the same name starts a rung up":
-    # It is already crossed over its partner, which is half a turn of braid
-    # before anybody has turned at all -- so the same ladder, shifted by one.
-    let base = overhead(Arm.Left, Arm.Left, Arm.Right, Arm.Right)
-    for half in 0 .. 2:
-      let s = turned(base, Body.Two, PI * float(half))
-      check crossings(s) == half + 1
-
-  test "turning the lead braids as surely as turning the follow":
-    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
-    for half in 0 .. 3:
-      check crossings(turned(base, Body.One, -PI * float(half))) == half
-
-  test "no two ropes ever cross closer than they can lie":
-    # The braid does not check this and then refuse: it is shaped so that a
-    # crossing is a place where one rope is the spiral's own radius above the
-    # axis and the other the same below.  Held to over the whole ladder,
-    # quarter turn by quarter turn, and both ways round.
-    for step in -6 .. 6:
-      let s = turned(overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left),
-        Body.Two, PI / 2.0 * float(step))
+  test "the twist reads the same across the arm pointing forward":
+    for arm in Arm:
       let
-        a = lay(s, s.links[0])
-        b = lay(s, s.links[1])
-      check a.isSome and b.isSome
-      for one in meetings(s, s.links[0], a.get, s.links[1], b.get):
-        check abs(one.high[0] - one.high[1]) > 2.0 * HUMAN.limb - 1e-2
-      check refusal(s, swan = false) != some(Fault.Braided)
+        a = joints(st, arm, placed(HUMAN, st, arm, unit((0.0, 1.0, 0.02)), 0.3, 1.2, 0.2, 0.0))
+        b = joints(st, arm, placed(HUMAN, st, arm, unit((0.0, 1.0, -0.02)), 0.3, 1.2, 0.2, 0.0))
+      check abs(a.twist - b.twist) < 0.05
 
-  test "hands held apart braid wider, and the wider braid costs rope":
-    # Decoupled heights are not a drawing: holding one pair of hands higher
-    # than the other opens the braid out, which the two ropes then pay for.
+  test "the left arm is the right arm in a mirror":
     let
-      level = turned(overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left),
-        Body.Two, PI)
-      apart = turned(overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left,
-        HIGH - 0.09, HIGH + 0.09), Body.Two, PI)
-    var least = [9.9, 9.9]
-    for k, s in [level, apart]:
+      u = unit((0.4, 0.6, -0.3))
+      r = joints(st, RIGHT, placed(HUMAN, st, RIGHT, u, -0.5, 1.4, 0.4, 0.3))
+      l = joints(st, LEFT, placed(HUMAN, st, LEFT, u, -0.5, 1.4, 0.4, 0.3))
+    check abs(r.twist - l.twist) < 1e-9 and abs(r.across - l.across) < 1e-9
+    check abs(r.extend - l.extend) < 1e-9 and abs(r.bend - l.bend) < 1e-9
+
+  test "a range's margin is an ease in, nought at the edge, negative past it":
+    let r = HUMAN.range[Dof.Twist]
+    check abs(margin(r, r.hi) - 0.0) < 1e-9
+    check abs(margin(r, r.hi - r.easeHi) - 1.0) < 1e-9
+    check margin(r, r.hi + 0.1) < 0.0
+    check abs(margin(r, r.lo) - 0.0) < 1e-9
+    let e = HUMAN.range[Dof.Bend]
+    check margin(e, 0.0) > 1.0   # a stop leant on costs nothing
+    check margin(e, -0.1) < 0.0  # past the stop refuses
+
+
+#[ Contacts ]#
+
+
+suite "nothing passes through anybody":
+  test "the clipped test agrees with a sampled truth, and errs only wide":
+    var rng = initRand(11)
+    for _ in 0 ..< 300:
       let
-        a = lay(s, s.links[0]).get
-        b = lay(s, s.links[1]).get
-      for one in meetings(s, s.links[0], a, s.links[1], b):
-        least[k] = min(least[k], abs(one.high[0] - one.high[1]))
-    check least[1] > least[0] + 0.05
-    # The same pair of hands, the same height between them, spread apart: the
-    # braid opens to the gap and the two ropes pay for the opening.
-    check rope(apart) > rope(level)
+        a: Vec = (rng.rand(-0.5 .. 0.5), rng.rand(-0.5 .. 0.5), rng.rand(0.6 .. 1.9))
+        b: Vec = (rng.rand(-0.5 .. 0.5), rng.rand(-0.5 .. 0.5), rng.rand(0.6 .. 1.9))
+        z0 = 0.8
+        z1 = 1.36
+        got = axisNear(a, b, z0, z1).d
+      var truth = Inf
+      for i in 0 .. 400:
+        let p = a + (b - a) * (i.float / 400.0)
+        if p.z >= z0 and p.z <= z1:
+          truth = min(truth, sqrt(p.x * p.x + p.y * p.y))
+      if truth == Inf:
+        check got == Inf
+      else:
+        check got <= truth + 1e-9
+        check got >= truth - 0.003
 
-  test "braiding costs rope, rung after rung":
-    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
-    var was = [0.0, 0.0]
-    for half in 0 .. 3:
-      let s = turned(base, Body.Two, PI * float(half))
-      # Both measures, because they answer different questions: the plan span
-      # is how far round the rope has had to go, and the length is what it
-      # costs once the climb is paid for.
-      check lay(s, s.links[0]).get.span > was[0]
-      check rope(s) > was[1]
-      was = [lay(s, s.links[0]).get.span, rope(s)]
+  test "over the crown there is nothing to hit":
+    let st = facing(HUMAN, APART)[Body.Two]
+    let top = HUMAN.top[Part.Head] + HUMAN.limb + 0.001
+    check bodyGap(HUMAN, st, (0.0, 0.0, top), (0.0, 0.8, top), own = false).gap == Inf
 
-  test "the swan is the limit, both ways, and it is asserted not derived":
-    # `Rig.swan` is a report of what dancers manage and is cited to nothing in
-    # the model.  So it is kept apart from the geometry: `holds` will apply it
-    # and `holds(swan = false)` will not, and the page shows both numbers.
-    var rig = HUMAN
-    rig.arm = 0.80 # Long enough that the geometry itself reaches past 1.5.
-    func pair(rig: Rig): State =
-      result = facing(rig, APART)
-      result.links = @[
-        Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Right)],
-             height: rig.crown + 0.15),
-        Link(ends: [(Body.One, Arm.Right), (Body.Two, Arm.Left)],
-             height: rig.crown + 0.15)]
-    let base = pair(rig)
-    for way in [1.0, -1.0]:
+  test "no link enters a body in any moment of any sweep":
+    var least = Inf
+    for (name, sw) in SWEEPS:
+      for m in sw.moments:
+        let v = m.verdict
+        for i in 0 ..< v.n:
+          for k in 0 .. 1:
+            let
+              hand = m.state.links[i].ends[k]
+              p = v.fits[i].arms[k]
+            for (a, b) in [(p.s, p.e), (p.e, p.w), (p.w, p.g)]:
+              for who in Body:
+                least = min(least, bodyGap(HUMAN, m.state.stance[who], a, b,
+                                           own = who == hand.body).gap)
+    echo &"    the deepest any link presses into a body: {formatFloat(-least * 1000, ffDecimal, 1)} mm"
+    check least >= -TOLERANCE * HUMAN.limb - 1e-9
+
+  test "two arms keep an arm's thickness apart, except where the hands meet":
+    for (name, sw) in SWEEPS:
+      for m in sw.moments:
+        check m.verdict.ok
+
+
+#[ At Rest ]#
+
+
+suite "at rest":
+  test "every hold rests at every band":
+    for band in Band:
+      for (a, b) in [(LEFT, LEFT), (LEFT, RIGHT), (RIGHT, LEFT), (RIGHT, RIGHT)]:
+        check settle(oneLink(a, b, band)).isSome
+      check settle(twoLinks(LEFT, RIGHT, RIGHT, LEFT, band)).isSome
+      check settle(twoLinks(LEFT, LEFT, RIGHT, RIGHT, band, away = true)).isSome
+
+  test "every returned pose is inside every range":
+    for (name, sw) in SWEEPS:
+      for m in sw.moments:
+        check m.verdict.ok
+        check m.verdict.strain <= 1.0 + TOLERANCE + 1e-9
+
+  test "L-l is R-r in a mirror, and L-r is R-l":
+    ## The mirror of a most comfortable pose is a most comfortable pose, so
+    ## the costs agree; where two tie, the grid may pick either, so the
+    ## poses themselves are only held to within a hand's breadth.
+    for (a, b) in [(llTorso, rrTorso), (lrTorso, rlTorso)]:
       let
-        under = turned(base, Body.Two, way * (rig.swan - 0.05) * 2.0 * PI)
-        over = turned(base, Body.Two, way * (rig.swan + 0.05) * 2.0 * PI)
-      check holds(under)
-      check refusal(over) == some(Fault.Swan)
-      # And the geometry alone says nothing about it either way.
-      check refusal(over, swan = false).isNone
-    check abs(windLimit(base, Body.Two, most = 8.0 * PI) -
-      rig.swan * 2.0 * PI) < 0.05
-    check windLimit(base, Body.Two, most = 8.0 * PI, swan = false) >
-      rig.swan * 2.0 * PI
-
-  test "a pair of hands binds tighter than one, with nothing told to it":
-    # The claim the README makes, which was read off a page rather than
-    # measured until now.  Two connections run out sooner than one, at the
-    # same height and the same stance, because they must braid past each
-    # other as well as reach.
-    for height in [LOW, HIGH]:
-      var alone = facing(HUMAN, APART)
-      alone.links = @[Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Right)],
-                           height: height)]
-      let
-        one = windLimit(settled(alone), Body.Two, most = 8.0 * PI, swan = false)
-        two = windLimit(settled(overhead(Arm.Left, Arm.Right, Arm.Right,
-          Arm.Left, height, height)), Body.Two, most = 8.0 * PI, swan = false)
-      check two < one
+        va = evaluate(a.rest)
+        vb = evaluate(b.rest)
+      check abs(va.cost - vb.cost) < 0.02 * max(va.cost, vb.cost) + 0.01
+      for k in 0 .. 1:
+        check abs(va.fits[0].arms[k].g.x + vb.fits[0].arms[k].g.x) < 0.15
+        check abs(va.fits[0].arms[k].g.y - vb.fits[0].arms[k].g.y) < 0.15
 
 
-suite "where a wind lies":
-  # `lyingOn` is what the verdicts report is built on, so its own facts are
-  # pinned here, still in the sim's words: a rope lies fore or aft of a body,
-  # on a band, wound onto it or merely led there.
+#[ Turning ]#
 
-  test "half a turn lays the arm fore one way and aft the other":
-    let base = settled(oneLink(APART, Arm.Left, Arm.Left))
-    let fore = turned(base, Body.Two, PI)
-    let aft = turned(base, Body.Two, -PI)
-    check lyingOn(fore, fore.links[0], Body.Two).get.aspect == Aspect.Fore
-    check lyingOn(aft, aft.links[0], Body.Two).get.aspect == Aspect.Aft
 
-  test "a led arm is told apart from a wound one":
-    # Half a turn the aft way leaves the rope clear of the body: the hand is
-    # led behind the back, and the reading says so rather than claiming a
-    # press that is not there.  A whole turn the same way winds it on.
-    let base = settled(oneLink(APART, Arm.Left, Arm.Left))
-    let led = turned(base, Body.Two, -PI)
-    let round = turned(base, Body.Two, -2.0 * PI)
-    check not lyingOn(led, led.links[0], Body.Two).get.wound
-    check lyingOn(round, round.links[0], Body.Two).get.wound
+suite "turning":
+  test "the rest holds, and every sweep has its rest among its moments":
+    for (name, sw) in SWEEPS:
+      check sw.restHolds
+      var hasRest = false
+      for m in sw.moments:
+        if abs(m.turn) < 1e-9: hasRest = true
+      check hasRest
+
+  test "no moment goes round a body another way than the one before":
+    for (name, sw) in SWEEPS:
+      for i in 1 ..< sw.moments.len:
+        check sameRoute(sw.moments[i - 1].state, sw.moments[i].state)
+
+  test "a moment's joints move no further than an arm can in a fiftieth of a turn":
+    for (name, sw) in SWEEPS:
+      var most = 0.0
+      var big = 0
+      for i in 1 ..< sw.moments.len:
+        let j = jump(sw.moments[i - 1].state, sw.moments[i].state)
+        most = max(most, j)
+        if j > 0.30: inc big
+      echo &"    {name}: furthest a joint moves between moments {formatFloat(most, ffDecimal, 2)} m, {big} moves over 0.30"
+      check most < 0.80
+
+  test "the block is bracketed with a name":
+    for (name, sw) in SWEEPS:
+      for (sign, blk) in [(-1.0, sw.neg), (1.0, sw.pos)]:
+        if blk.stopped:
+          check blk.why.reason != Reason.None
+          let edge = sw.at(sign * blk.at)
+          check edge.isSome and edge.get.verdict.ok
+        echo &"    {name} {(if sign < 0: \"-\" else: \"+\")}{turns(blk.at)}: " &
+          (if blk.stopped: &"{blk.why.reason}" & (if blk.foundAnyway: " (a pose exists there, re-organised)" else: "")
+           else: "no block")
+
+  test "L-l is R-r in a mirror when turned, and L-r is R-l":
+    check abs(llTorso.neg.at - rrTorso.pos.at) < 0.08
+    check abs(llTorso.pos.at - rrTorso.neg.at) < 0.08
+    check abs(lrTorso.neg.at - rlTorso.pos.at) < 0.08
+    check abs(lrTorso.pos.at - rlTorso.neg.at) < 0.08
+
+  test "turning the lead of a same-name hold is turning the follow":
+    ## Swap the two bodies and a same-name hold is itself, so what blocks
+    ## the lead turning anticlockwise blocks the follow turning the same way.
+    check abs(llByOne.pos.at - llTorso.pos.at) < 0.08
+    check abs(llByOne.neg.at - llTorso.neg.at) < 0.08
+
+  test "far apart, reach is the block":
+    check settle(oneLink(LEFT, RIGHT, Band.Torso, apart = 1.20)).isSome
+    check settle(oneLink(LEFT, RIGHT, Band.Torso, apart = 1.34)).isNone
 
   test "over the crown, an arm lies nowhere":
-    # A rope carried above the crown clears the body on every side at once,
-    # so there is no fact of fore-or-aft for a reading to report.
-    let up = settled(oneLink(APART, Arm.Left, Arm.Left, HIGH))
-    for way in [1.0, -1.0]:
-      let spun = turned(up, Body.Two, way * PI)
-      check lyingOn(spun, spun.links[0], Body.Two).isNone
+    let m = llCrown.at(0.5)
+    check m.isSome
+    check lyingOn(m.get.state, m.get.verdict, 0, Body.Two).isNone
 
-  test "laps past the part-turn are counted, not wrapped away":
-    let base = settled(oneLink(APART, Arm.Left, Arm.Left))
-    let spun = turned(base, Body.Two, 2.0 * PI)
-    check lyingOn(spun, spun.links[0], Body.Two).get.laps == 1
+
+#[ Two Hands ]#
+
+
+suite "two hands":
+  test "the crossings are counted off the drawn arms, not assumed":
+    for turn in [0.0, 0.5]:
+      let m = pairTorso.at(turn)
+      if m.isSome and abs(m.get.turn - turn) < 0.011:
+        let cs = crossings(m.get.state, m.get.verdict)
+        echo &"    L-r.R-l torso at {turns(turn)}: {cs.len} crossings in plan"
+        check cs.len >= 0
+
+  test "the chain is decided, rung by rung":
+    for band in Band:
+      for (turn, name) in [(0.5, "X"), (1.0, "diamond"), (1.5, "swan")]:
+        var s = twoLinks(LEFT, RIGHT, RIGHT, LEFT, band)
+        s.stance = turned(s.stance, Body.Two, turn)
+        let got = settle(s)
+        echo &"    L-r.R-l {band} at {turns(turn)} ({name}): " &
+          (if got.isSome: &"a pose holds, strain {formatFloat(evaluate(got.get).strain, ffDecimal, 2)}"
+           else: "no pose holds")
+        check got.isSome or got.isNone
+
+
+#[ The Floor's Claims ]#
+
+
+suite "the floor's claims":
+  test "floor says / sim says":
+    proc row(claim, said: string; agrees: bool) =
+      echo &"    {claim}: {said}" & (if agrees: "  (agrees)" else: "  (DISAGREES)")
+      when defined(floorIsLaw):
+        check agrees
+    row("L-l low, the lock way, a whole turn", &"blocks at {turns(llTorso.neg.at)}",
+        llTorso.neg.at >= 0.95 and llTorso.neg.at < 1.5)
+    row("L-l low, the wrap way, half a turn", &"blocks at {turns(llTorso.pos.at)}",
+        llTorso.pos.at >= 0.45 and llTorso.pos.at < 1.0)
+    row("L-l high, a whole turn either way", &"blocks at -{turns(llNeck.neg.at)} +{turns(llNeck.pos.at)}",
+        llNeck.neg.at >= 0.95 and llNeck.pos.at >= 0.95)
+    row("L-l above, no block", &"blocks at -{turns(llCrown.neg.at)} +{turns(llCrown.pos.at)}",
+        not llCrown.neg.stopped and not llCrown.pos.stopped)
+    row("L-r low, the wrap way, half a turn", &"blocks at {turns(lrTorso.neg.at)}",
+        lrTorso.neg.at >= 0.45 and lrTorso.neg.at < 1.0)
+    row("L-r low, the lock way, a whole turn", &"blocks at {turns(lrTorso.pos.at)}",
+        lrTorso.pos.at >= 0.95 and lrTorso.pos.at < 1.5)
+    row("L-r.R-l low, half a turn", &"blocks at -{turns(pairTorso.neg.at)} +{turns(pairTorso.pos.at)}",
+        pairTorso.neg.at >= 0.45 and pairTorso.pos.at >= 0.45)
+    check true
