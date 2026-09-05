@@ -3601,9 +3601,10 @@ for (let ink = 0; ink < nimInkCount(); ink += 1) {
 }
 // Label's face sized to box marker.nim placed it in, so one number decides both.
 svg_overlay.style.fontSize = HEIGHT_LABEL_MARKER + 'px';
-// Outline around label's letters, in pixels: wide enough to read against object's own.
-//   disc, which label's fill matches by design.
-const WIDTH_LABEL_STROKE = 3;
+// Halo around label's letters, in pixels: about tenth of face, map-label practice.
+//   Separates letters from object's own disc, which label's fill matches by design,
+//   without framing them; three pixels swamped counters at this size.
+const WIDTH_LABEL_STROKE = 1.5;
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;

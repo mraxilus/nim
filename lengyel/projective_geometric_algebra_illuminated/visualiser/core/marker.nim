@@ -52,7 +52,7 @@ const
     ##   what makes selection legible.
     ##   Held tight: wide band reads as second object, and on several selected items
     ##   bands become busiest thing on screen.
-  HEIGHT_MARKER_LABEL* = 14.0
+  HEIGHT_MARKER_LABEL* = 13.0
     ## Set nominal height of selected object's name label, in pixels.
     ##   Label's centre is placed half this above marker's top, so text box sits clear
     ##   of outline whichever face each front-end sets; faces differ, metrics stay theirs.
