@@ -2958,6 +2958,15 @@ suite "Camera Aim":
       picked.toggle(scene.addItem(m, "m", Ink.Rose))
     (scene, picked)
 
+  proc offerAim(
+    tween: var CameraTween; camera: Camera; scene: Scene; picked: Selection;
+    staged: Option[Preview]; scale: DrawExtent; width, height: int; now, duration: float
+  ) =
+    ## Offer with no pointer pick, as list and keyboard picks do.
+    ##   Overload for cases about framing rule alone; pointer rule's cases pass their own.
+    var pointer = none(PointerPick)
+    tween.offerAim(camera, scene, picked, staged, scale, width, height, now, duration, pointer)
+
   proc framedFor(
     scene: Scene, picked: Selection, camera: Camera
   ): CameraPlacement =
@@ -3561,6 +3570,160 @@ suite "Camera Aim":
       tween.advance(camera, now, easeOutCubic)
     check tween.is_arrived
     check isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
+
+
+  test "a pointer pick keeps the object's pixel through the ease and ends at its fit":
+    # What right-click promises: object clicked stays under pointer while camera comes.
+    #   in, and dot (two pixels of radius, forty units out) comes in until its disc
+    #   spans `FRACTION_BOX_APPROACH` of centred box.
+    const
+      DURATION = 0.35
+      ASPECT = float(WIDTH_AIM)/float(HEIGHT_AIM)
+      RADIUS = 0.08
+    for azimuth in AZIMUTHS_AIM:
+      for elevation in ELEVATIONS_AIM:
+        var camera = placementAim(azimuth, elevation)
+        # Stand point forty units ahead and well off sight axis, so pixel is not middle.
+        let
+          eye = camera.eye
+          axes = camera.frame(eye)
+          place = eye + 40.0*axes.forward + 4.0*axes.axis_right - 2.0*axes.axis_up
+        var (scene, picked) = sceneOf(toMultivector(place))
+        scene.setRadius(picked.at(0), RADIUS)
+        let pixel = projectToScreen(
+          camera.initMatrixViewProjection(ASPECT), WIDTH_AIM, HEIGHT_AIM, place
+        )
+        var
+          tween: CameraTween
+          pointer = some(PointerPick(slot: picked.at(0), cursor: pixel))
+        tween.offerAim(
+          camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+          WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION, pointer,
+        )
+        check pointer.isNone # Spent by offer.
+        check tween.anchor_held.isSome
+        for step in 1 .. 5:
+          tween.advance(camera, DURATION*float(step)/5.0, easeOutCubic)
+          let now_at = projectToScreen(
+            camera.initMatrixViewProjection(ASPECT), WIDTH_AIM, HEIGHT_AIM, place
+          )
+          check abs(now_at.x - pixel.x) < 0.01
+          check abs(now_at.y - pixel.y) < 0.01
+        check tween.is_arrived
+        check camera.azimuth == placementAim(azimuth, elevation).azimuth
+        check camera.elevation == placementAim(azimuth, elevation).elevation
+        let fit = distanceFitting(
+          RADIUS/FRACTION_BOX_APPROACH, camera, WIDTH_AIM, HEIGHT_AIM, INSET_POINT_SHOWN
+        )
+        check abs(camera.distance - fit) < 1.0e-9
+        # Target at anchor's depth: point and target equally far along sight.
+        let eye_settled = camera.eye
+        check abs(dot(place - eye_settled, camera.frame(eye_settled).forward) - fit) < 1.0e-6
+
+
+  test "a pointer pick never moves the eye further off than the object stands":
+    # Object already nearer than its fit leaves picture as it is: target alone comes to.
+    #   its depth. Point seen at its size, and line, come in to orbit distance and no
+    #   further; only floor dot comes in to its fit.
+    let camera = placementAim(0.7, 0.2)
+    let
+      eye = camera.eye
+      axes = camera.frame(eye)
+      scale = camera.drawExtentFor(HEIGHT_AIM)
+      near = eye + 0.3*axes.forward + 0.02*axes.axis_right
+      far = eye + 40.0*axes.forward + 3.0*axes.axis_up
+    let placed_near =
+      placementUnderPointer(near, 0.08, true, camera, scale, WIDTH_AIM, HEIGHT_AIM)
+    check placed_near.isSome
+    check abs(placed_near.get.distance - 0.3) < 1.0e-9
+    check camera.placed(placed_near.get).eye =~ eye
+    # Radius half unit stands forty out at thirteen pixels, plainly seen: orbit distance.
+    let placed_seen =
+      placementUnderPointer(far, 0.5, true, camera, scale, WIDTH_AIM, HEIGHT_AIM)
+    check placed_seen.isSome
+    check abs(placed_seen.get.distance - camera.distance) < 1.0e-9
+    let placed_line =
+      placementUnderPointer(far, 0.0, false, camera, scale, WIDTH_AIM, HEIGHT_AIM)
+    check placed_line.isSome
+    check abs(placed_line.get.distance - camera.distance) < 1.0e-9
+    let placed_behind = placementUnderPointer(
+      eye - 2.0*axes.forward, 0.08, true, camera, scale, WIDTH_AIM, HEIGHT_AIM
+    )
+    check placed_behind.isNone
+
+
+  test "a plane or a group picked by pointer frames as ever":
+    # Plane is surface, every pixel of its disc is on it; group has to fit, which holding.
+    #   one pixel cannot promise. Both take `placementFor`, and neither holds anchor.
+    const DURATION = 0.35
+    var camera = placementAim(1.6, 0.2)
+    let (scene_plane, picked_plane) = sceneOf(planeThrough(
+      toMultivector(Position(x: 0.0, y: 0.0, z: 0.0)), toMultivector(UP_WORLD)
+    ))
+    var
+      tween: CameraTween
+      pointer = some(PointerPick(
+        slot: picked_plane.at(0), cursor: ScreenPosition(x: 700.0, y: 450.0)
+      ))
+    tween.offerAim(
+      camera, scene_plane, picked_plane, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION, pointer,
+    )
+    check tween.goal.isSome
+    check tween.anchor_held.isNone
+    let (scene_two, picked_two) = sceneOf(
+      toMultivector(Position(x: 14.0, y: -11.0, z: 3.0)),
+      toMultivector(Position(x: -9.0, y: 12.0, z: -5.0)),
+    )
+    var tween_two: CameraTween
+    pointer = some(PointerPick(slot: picked_two.at(1), cursor: ScreenPosition(x: 700.0, y: 450.0)))
+    tween_two.offerAim(
+      camera, scene_two, picked_two, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION, pointer,
+    )
+    check tween_two.goal.isSome
+    check tween_two.anchor_held.isNone
+    check tween_two.destination ==
+      framedFor(scene_two, picked_two, camera)
+
+
+  test "a pointer re-pick of an object the camera already holds aims afresh":
+    # Standing offer ignores goal it holds, so same object picked again after wheel took.
+    #   reader off went nowhere: "sometimes it doesn't zoom in".
+    const DURATION = 0.35
+    var camera = placementAim(0.7, 0.2)
+    let
+      eye = camera.eye
+      axes = camera.frame(eye)
+      place = eye + 20.0*axes.forward + 2.0*axes.axis_right
+    let (scene, picked) = sceneOf(toMultivector(place))
+    var
+      tween: CameraTween
+      pointer = none(PointerPick)
+    tween.offerAim(
+      camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION, pointer,
+    )
+    tween.settle(camera)
+    check tween.is_arrived
+    camera.dolly(8.0) # Reader wheels out; offer stands answered.
+    tween.abandon()
+    tween.offerAim(
+      camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 1.0, DURATION, pointer,
+    )
+    check tween.is_arrived # Same goal, no pointer: nothing re-armed.
+    let pixel = projectToScreen(
+      camera.initMatrixViewProjection(float(WIDTH_AIM)/float(HEIGHT_AIM)),
+      WIDTH_AIM, HEIGHT_AIM, place,
+    )
+    pointer = some(PointerPick(slot: picked.at(0), cursor: pixel))
+    tween.offerAim(
+      camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 2.0, DURATION, pointer,
+    )
+    check not tween.is_arrived
+    check tween.destination.distance < camera.distance
 
 
   test "an aim widens by exactly the objects folded into it":

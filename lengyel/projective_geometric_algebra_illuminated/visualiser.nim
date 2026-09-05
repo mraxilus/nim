@@ -357,9 +357,10 @@ func offerCameraAim(
   ##     This hands it panel's staged session and selection, and frame's pixel dimensions.
   ##   Every construction path leaves new object selected, so all frame result without
   ##   knowing about camera.
+  ##   Pointer pick recorded since last frame goes with it, and is spent here.
   panel.tween_camera.offerAim(
     camera, scene, panel.selection, panel.staged, scale, width, height, now,
-    ANIMATION_SECONDS,
+    ANIMATION_SECONDS, panel.pointer_pick,
   )
 
 
@@ -1006,6 +1007,9 @@ proc handleEvent(
         else:
           if is_shifted: panel.selection.toggle(outcome.index_clicked.get)
           else: panel.selection.selectOnly(outcome.index_clicked.get)
+          # Note pick for camera: what was clicked stays under pointer as view comes in.
+          panel.pointer_pick =
+            some(PointerPick(slot: outcome.index_clicked.get, cursor: interaction.cursor))
           if revealsMenuFor(event.button.button):
             panel.showSelectionMenuAt(interaction.cursor)
           else: panel.hideSelectionMenu()
@@ -1034,6 +1038,7 @@ proc handleEvent(
         else:
           if is_shifted: panel.selection.toggle(slot)
           else: panel.selection.selectOnly(slot)
+          panel.pointer_pick = some(PointerPick(slot: slot, cursor: interaction.cursor))
           if revealsMenuFor(event.button.button):
             panel.showSelectionMenuAt(interaction.cursor)
           else: panel.hideSelectionMenu()

@@ -40,7 +40,8 @@ import std/[options, strformat]
 import ../../pga
 import ./gui
 import ../core/[
-  boundary, camera, format, help, history, interaction, picking, tessellate, scene, selection,
+  boundary, camera, format, framing, help, history, interaction, picking, tessellate, scene,
+  selection,
 ]
 
 
@@ -180,6 +181,9 @@ type
     index_arity*: cint ## Arity filter operation picker offers.
       ## 0 unary, 1 binary, matching `Arity`'s ordinals.
       ## Filters list rather than greying second operand.
+    pointer_pick*: Option[PointerPick] ## Pick made by pointer since camera was last offered.
+      ## Consumed by `framing.offerAim` next frame: object stays under pointer as camera
+      ## comes in.
     is_menu_selection_shown*: bool ## Whether floating selection menu is on screen.
       ## See `layoutSelectionMenu`.
       ## Not derived from selection being non-empty.

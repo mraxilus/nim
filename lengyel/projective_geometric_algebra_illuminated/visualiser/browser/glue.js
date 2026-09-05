@@ -686,6 +686,13 @@ function onSelectionChanged(position_local) {
   refreshObjectsUI(); // Also re-syncs apply controls and row checkboxes.
 }
 
+// Note pick made by pointer, so camera keeps that object under it as view comes in.
+//   Cursor is already Nim's (`nimUpdateCursor` on every move and tap), so slot is all
+//   bridge needs. Every pointer pick, whichever button: menu is button's business.
+function pickByPointer(slot) {
+  nimPickByPointer(slot);
+}
+
 function selectOnly(slot, position_local) {
   nimSelectOnly(slot);
   onSelectionChanged(position_local);
@@ -723,6 +730,7 @@ function pickOnClick(slot, button, is_shifted) {
     refreshSelectionMenu(cursor_last);
     return;
   }
+  pickByPointer(slot);
   if (is_shifted) toggleSelection(slot, reveals ? cursor_last : null);
   else selectOnly(slot, reveals ? cursor_last : null);
   if (!reveals) hideSelectionMenu();
@@ -4340,6 +4348,7 @@ function handleTap(position_local) {
   }
   if (slots_selection.length === 0) return; // Not in select mode yet -- only long-press
     // starts one; plain tap before that is no-op, same as before this feature.
+  pickByPointer(hovered);
   toggleSelection(hovered, position_local);
 }
 
@@ -4866,6 +4875,7 @@ function frame() {
     //   its marker stays swollen clear of finger for as long as that finger is down, and settles
     //   only once `nimReleaseHold` says it may.
     has_long_press_fired = true; // Still needed, to stop release also reading as tap.
+    pickByPointer(slot_matured);
     toggleSelection(slot_matured, position_touch_down);
   }
   // And retire it once that settle is spent, so finished hold stops being drawn at all.

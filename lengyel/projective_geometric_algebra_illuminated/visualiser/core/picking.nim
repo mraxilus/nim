@@ -745,6 +745,21 @@ type AnchorZoom* = object ## Define what zoom holds still, and whether it stands
     ## are followed by map rule alone, target sliding toward `at`; see `camera.dollyToward`.
 
 
+func positionUnderPointerOn*(
+  scene: Scene; slot: int; camera: Camera; scale: DrawExtent; width, height: int;
+  cursor: ScreenPosition
+): Option[Position] =
+  ## Solve where one object stands under `cursor`.
+  ##   Point at its place, line at its point nearest sight ray, plane where ray crosses it.
+  ##   For zoom's anchor and for pointer pick's aim, both holding that place on its pixel.
+  ##   None for horizon shapes and hits behind eye; see `positionOnItemUnder`.
+  ##   No nearness filter: caller wanting one applies `isAnchorNear`.
+  let
+    frame_camera = camera.frame(scale.eye)
+    ray = castRay(camera, scale.eye, frame_camera, width, height, cursor)
+  positionOnItemUnder(scene.geometryOf(slot), ray, scale.plane_eye)
+
+
 proc anchorZoomAt*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
@@ -770,10 +785,7 @@ proc anchorZoomAt*(
     scene, camera, scale, view_projection, width, height, cursor, placed,
   )
   if slot.isSome:
-    let
-      frame_camera = camera.frame(scale.eye)
-      ray = castRay(camera, scale.eye, frame_camera, width, height, cursor)
-      found = positionOnItemUnder(scene.geometryOf(slot.get), ray, scale.plane_eye)
+    let found = positionUnderPointerOn(scene, slot.get, camera, scale, width, height, cursor)
     if found.isSome and isAnchorNear(found.get, camera, scale):
       let is_standing = shape(scene.geometryOf(slot.get)) != some(Shape.Plane)
       return some(AnchorZoom(at: found.get, is_standing: is_standing))

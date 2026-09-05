@@ -46,6 +46,17 @@ const
   ROUNDS_PLACEMENT_LEAST* = 5
     ## Fix halvings run inside bracketed step.
     ##   Five puts answer within 1/384 of full move, under pixel of any pan or turn here.
+  FRACTION_BOX_APPROACH* = 0.25
+    ## Fix how much of centred box picked dot's disc spans once pointer pick has come in.
+    ##   Quarter of box is sixth of frame's height: object plainly seen, neighbours still
+    ##   about it. Whole box put moon's planet off screen.
+
+
+type PointerPick* = object ## Define pick made by pointer, awaiting camera's aim.
+  ## Front-end records it beside selection change; `offerAim` consumes it next frame.
+  ## What pointer picked stays under pointer as camera comes in; see `placementUnderPointer`.
+  slot*: int ## Object clicked or tapped.
+  cursor*: ScreenPosition ## Where pointer stood, window pixels.
 
 
 
@@ -244,11 +255,62 @@ func placementFor*(
 
 
 
+func placementUnderPointer*(
+  anchor: Position; radius: float; is_sized: bool; camera: Camera; scale: DrawExtent;
+  width, height: int
+): Option[CameraPlacement] =
+  ## Resolve where camera ends after pointer pick, `anchor` kept on its pixel.
+  ##   Wheel's own move (`camera.dollyToward` then `retargetToDepth`): eye comes in along
+  ##   its line to anchor, angles untouched, target set on sight line at anchor's depth.
+  ##   How far in depends on what reader could see.
+  ##     Point drawn at floor dot (`DIAMETER_POINT_LEAST`) is only place, so camera comes
+  ##     in until its disc spans `FRACTION_BOX_APPROACH` of centred box: moon picked from
+  ##     168 units out becomes moon.
+  ##     Point seen at its size, and line, come in no further than orbit distance: reader
+  ##     at working scale picking operands keeps that scale, as ever.
+  ##   Never further off than anchor already stands: pick of object already close leaves
+  ##   picture as it is, target alone moving to its depth.
+  ##   Written out rather than through `dollyToward`, whose near floor scales eye's move
+  ##   by less than factor asked and would leave target short of anchor's depth.
+  ##   None where anchor is not ahead of eye, leaving caller `placementFor`.
+  let
+    eye = camera.eye
+    forward = camera.frame(eye).forward
+    depth_now = dot(anchor - eye, forward)
+  if depth_now <= 1.0e-6: return
+  let
+    is_dot =
+      is_sized and radius < 0.5*float(DIAMETER_POINT_LEAST)*worldPerPixelAt(anchor, scale.scale)
+    depth_fit =
+      if is_dot:
+        distanceFitting(radius/FRACTION_BOX_APPROACH, camera, width, height, INSET_POINT_SHOWN)
+      else: camera.distance
+    depth_end = distanceHeld(min(depth_now, depth_fit))
+    # Assemble eye as anchor plus offset back toward where it stood, scaled by depths.
+    eye_settled = position(add(
+      toMultivector(anchor),
+      wedge(depth_end/depth_now, subtract(toMultivector(eye), toMultivector(anchor))),
+    ))
+  if eye_settled.isNone: return
+  some(CameraPlacement(
+    target: Position(
+      x: eye_settled.get.x + depth_end*forward.x,
+      y: eye_settled.get.y + depth_end*forward.y,
+      z: eye_settled.get.z + depth_end*forward.z,
+    ),
+    distance: depth_end,
+    azimuth: camera.azimuth,
+    elevation: camera.elevation,
+  ))
+
+
+
 #[ Standing Offer ]#
 
 func offerAim*(
   tween: var CameraTween; camera: Camera; scene: Scene; picked: Selection;
-  staged: Option[Preview]; scale: DrawExtent; width, height: int; now, duration: float
+  staged: Option[Preview]; scale: DrawExtent; width, height: int; now, duration: float;
+  pointer: var Option[PointerPick]
 ) =
   ## Offer camera whatever is being worked on to look at.
   ##   One call both front-ends and storyboard make, once per frame.
@@ -259,17 +321,42 @@ func offerAim*(
   ##   which lets picking same object again aim at it afresh.
   ##   `isGoalHeld` guard keeps `placementFor`'s search off hot path: offer is re-made
   ##   every frame selection stands.
+  ##   `pointer` is pick made since last offer, consumed here whatever comes of it.
+  ##     Guard is skipped for it: object already held, picked again, is taken to again.
+  ##     Where selection is exactly that point or line and nothing is staged, destination
+  ##     keeps it under pointer (`placementUnderPointer`); plane, group and horizon shape
+  ##     frame as ever. Plane is surface, every pixel of its disc is on it; group has to
+  ##     fit, which holding one pixel cannot promise.
   # Take caller's extent, not second derivation.
   #   Building another here ran `algebraFilled` and `camera.frame`'s joins twice per frame.
   let aim = aimFor(scene, picked, staged, scale)
+  let pick = pointer
+  pointer = none(PointerPick)
   if aim.isNone:
     tween.release()
     return
-  if tween.isGoalHeld(aim.get): return
+  if pick.isNone and tween.isGoalHeld(aim.get): return
+  var
+    destination = none(CameraPlacement)
+    anchor = none(Position)
+  if pick.isSome and staged.isNone and picked.len == 1 and picked.at(0) == pick.get.slot and
+      scene.isAlive(pick.get.slot):
+    let shaped = shape(scene.geometryOf(pick.get.slot))
+    if shaped.isSome and shaped.get in {Shape.Point, Shape.Line}:
+      anchor = positionUnderPointerOn(
+        scene, pick.get.slot, camera, scale, width, height, pick.get.cursor
+      )
+      if anchor.isSome:
+        destination = placementUnderPointer(
+          anchor.get, scene.radiusAt(pick.get.slot), shaped.get == Shape.Point,
+          camera, scale, width, height,
+        )
+  if destination.isNone:
+    anchor = none(Position)
+    destination = some(placementFor(aim.get, scene, picked, staged, camera, width, height))
   tween.aimAt(
-    camera, aim.get,
-    placementFor(aim.get, scene, picked, staged, camera, width, height),
-    now, duration,
+    camera, aim.get, destination.get, now, duration, anchor_held = anchor,
+    is_renewed = pick.isSome,
   )
 
 
@@ -286,7 +373,8 @@ func offerAimAt*(
   ##   `watched` yields one object and stops.
   ##     Cost is one zeroed `Scene` per capture, storyboard's rather than frame loop's.
   var alone: Scene
+  var pointer = none(PointerPick)
   offerAim(
     tween, camera, alone, Selection(), some(previewStaging(m, RADIUS_ITEM_DEFAULT)),
-    camera.drawExtentFor(height), width, height, now, duration,
+    camera.drawExtentFor(height), width, height, now, duration, pointer,
   )

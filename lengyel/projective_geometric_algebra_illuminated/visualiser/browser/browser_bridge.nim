@@ -211,6 +211,8 @@ var
     ##   itself.
   INTERACTION = Interaction(is_enabled: true) ## Picking and drag, always live here.
     ## No storyboard-capture mode to switch them off for.
+  POINTER_PICK: Option[PointerPick] ## Pick made by pointer since camera was last offered.
+    ## Consumed by `framing.offerAim` in `nimBuildFrame`; see `nimPickByPointer`.
   PLACEMENTS: array[ITEMS_MAX, Placed] ## What algebra says about each live slot.
     ## Placed once per edit, emitted every frame.
     ##   Nothing in `tessellate.Placed` reads camera, so placement stays true while view
@@ -1201,6 +1203,14 @@ proc nimSelectToggle(slot: cint) {.exportc.} = SELECTION.toggle(int(slot))
   ## Add slot to end of selection, or drop it where already picked.
   ##   Pick order names operands m and n.
 
+proc nimPickByPointer(slot: cint) {.exportc.} =
+  ## Note that `slot` was just picked by pointer standing at `INTERACTION.cursor`.
+  ##   Camera then keeps it under pointer as it comes in; see `framing.PointerPick`.
+  ##   Beside `nimSelectOnly`/`nimSelectToggle` rather than folded into them: list and
+  ##   keyboard pick through those too, with no pointer to hold.
+  POINTER_PICK = some(PointerPick(slot: int(slot), cursor: INTERACTION.cursor))
+
+
 proc nimSelectClear() {.exportc.} = SELECTION.clear()
   ## Drop every pick.
 
@@ -2173,7 +2183,7 @@ proc nimBuildFrame(
   let ghost = staged()
   TWEEN_CAMERA.offerAim(
     CAMERA, SCENE, SELECTION, ghost, scale, int(float(aspect)*float(height_pixels)),
-    int(height_pixels), float(now), ANIMATION_SECONDS,
+    int(height_pixels), float(now), ANIMATION_SECONDS, POINTER_PICK,
   )
 
   # Hold furniture where settings match last frame's.

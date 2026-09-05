@@ -364,7 +364,23 @@ report(
 );
 
 await settleCamera();
-await tapAt(40, SIZE_VIEW.height - 40);
+// Find pixel with nothing under it: picks above moved view, and corner is not empty by.
+//   right anywhere.
+const pixel_empty = await page.evaluate((size) => {
+  // Lower half only: page's own controls stand along top and down right side.
+  const candidates = [
+    [40, size.height - 40], [40, size.height - 140], [140, size.height - 40],
+    [size.width / 2, size.height - 40], [size.width / 2, size.height - 140],
+    [40, size.height / 2],
+  ];
+  for (const [x, y] of candidates) {
+    nimUpdateCursor(x, y);
+    nimUpdateHover(size.width, size.height);
+    if (nimHoverSlot() < 0 || nimIsHoverBackdrop()) return [x, y];
+  }
+  return candidates[0];
+}, SIZE_VIEW);
+await tapAt(pixel_empty[0], pixel_empty[1]);
 report(
   'a tap on empty space clears the selection',
   (await page.evaluate(() => nimSelectionCount())) === 0,
@@ -681,35 +697,43 @@ report(
     `two -> ${centred_two.target.map((v) => v.toFixed(2))} ` +
     `(middle ${middle_two.map((v) => v.toFixed(2))})`,
 );
-// **Selection menu waits for camera to settle, then opens beside pointer.** Picking
-// eases view so picked object glides to middle; menu opened at once glided away with it.
-// Right-click 15 px off first pickable point's anchor, inside its pick reach: menu stays
-// hidden while `nimCameraIsCarrying`, then opens with its corner within inset of pointer
-// where pointer still is, and pan afterwards moves menu and anchor by same delta.
-// Glass is cleared first, since drawer standing open would take click; camera is
-// settled, since earlier framing still running would carry anchor away between reads.
+// **Pointer pick keeps its object under pointer, comes in to it, and opens menu at
+// once.** Wheel out six notches from Home so first pickable point is dot far off,
+// then right-click 6 px off its anchor: menu is up two frames in with its corner within
+// inset of pointer; anchor's pixel is where it was, in flight and settled; distance
+// fell; target sits at object's depth. Pan afterwards moves menu and anchor by same
+// delta. Second right-click on same object after wheel notch moves camera again.
+// Glass is cleared first, since drawer standing open would take click.
 await clearTheGlass();
 await page.keyboard.press('Home');
 await settleCamera();
+await page.mouse.move(400, 300);
+for (let notch = 0; notch < 6; notch += 1) {
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(40);
+}
+await settleCamera();
+const camera_far = await readCamera();
 const menu_placed = await page.evaluate((slot) => {
   const rect = document.getElementById('gl').getBoundingClientRect();
   const at = Array.from(nimAnchorScreen(slot, rect.width, rect.height));
   return {
-    slot, x: rect.left + at[0] + 15, y: rect.top + at[1] + 10, in_front: at[2] > 0.5,
+    slot, x: rect.left + at[0] + 6, y: rect.top + at[1] + 4, in_front: at[2] > 0.5,
     anchor: [rect.left + at[0], rect.top + at[1]],
   };
 }, points_pickable[0]);
+const place_picked = await placeOfSlot(points_pickable[0]);
 await page.mouse.move(menu_placed.x, menu_placed.y);
 await page.waitForTimeout(100);
 await page.mouse.click(menu_placed.x, menu_placed.y, { button: 'right' });
-await page.waitForTimeout(120); // Two frames in: ease armed, menu must still be away.
+await page.waitForTimeout(120); // Two frames in: ease under way, menu already up.
 const menuAndAnchor = () => page.evaluate((slot) => {
   const menu = document.getElementById('selection-menu').getBoundingClientRect();
   const rect = document.getElementById('gl').getBoundingClientRect();
   const at = Array.from(nimAnchorScreen(slot, rect.width, rect.height));
   return {
     shown: document.getElementById('selection-menu').classList.contains('show'),
-    carrying: nimCameraIsCarrying(),
+    distance: nimCameraDistance(),
     menu: [menu.left, menu.top], anchor: [rect.left + at[0], rect.top + at[1]],
   };
 }, menu_placed.slot);
@@ -717,25 +741,38 @@ const in_flight = await menuAndAnchor();
 await settleCamera();
 await page.waitForTimeout(200);
 const opened = await menuAndAnchor();
+const camera_near = await readCamera();
 await page.evaluate(() => nimCameraPan(0.4, 0.2));
 await page.waitForTimeout(600);
 const panned = await menuAndAnchor();
 const corner_from_pointer = [opened.menu[0] - menu_placed.x, opened.menu[1] - menu_placed.y];
 const offset_opened = [opened.menu[0] - opened.anchor[0], opened.menu[1] - opened.anchor[1]];
 const offset_panned = [panned.menu[0] - panned.anchor[0], panned.menu[1] - panned.anchor[1]];
-const moved_by_pick = Math.hypot(
+const drift_in_flight = Math.hypot(
+  in_flight.anchor[0] - menu_placed.anchor[0], in_flight.anchor[1] - menu_placed.anchor[1],
+);
+const drift_settled = Math.hypot(
   opened.anchor[0] - menu_placed.anchor[0], opened.anchor[1] - menu_placed.anchor[1],
 );
+const depth_picked = depthOf(camera_near, place_picked);
 report(
-  'the selection menu waits for the camera to settle, then opens beside the pointer',
-  menu_placed.in_front && in_flight.carrying && !in_flight.shown && opened.shown &&
-    Math.abs(corner_from_pointer[0] - 8) < 2 && Math.abs(corner_from_pointer[1] - 8) < 2 &&
-    moved_by_pick > 20,
-  `in flight: ${in_flight.carrying ? 'carrying' : 'still'}, menu ` +
-    `${in_flight.shown ? 'shown' : 'hidden'}; settled: menu ` +
+  'a pointer pick opens the menu at once beside the pointer',
+  menu_placed.in_front && in_flight.shown && opened.shown &&
+    Math.abs(corner_from_pointer[0] - 8) < 2 && Math.abs(corner_from_pointer[1] - 8) < 2,
+  `two frames in: menu ${in_flight.shown ? 'shown' : 'hidden'}; settled: menu ` +
     `${opened.shown ? 'shown' : 'hidden'}, corner ` +
-    `${corner_from_pointer.map((v) => v.toFixed(0))} ` +
-    `px from pointer (inset 8), pick moved anchor ${moved_by_pick.toFixed(0)} px`,
+    `${corner_from_pointer.map((v) => v.toFixed(0))} px from pointer (inset 8)`,
+);
+report(
+  'and keeps the picked object under the pointer as the camera comes in to it',
+  drift_in_flight < 1.5 && drift_settled < 1.5 &&
+    in_flight.distance < camera_far.distance - 0.01 &&
+    camera_near.distance < 0.5 * camera_far.distance &&
+    Math.abs(depth_picked - camera_near.distance) < 0.01,
+  `anchor drifted ${drift_in_flight.toFixed(2)} px in flight, ` +
+    `${drift_settled.toFixed(2)} px settled; distance ${camera_far.distance.toFixed(2)} ` +
+    `-> ${in_flight.distance.toFixed(2)} in flight -> ${camera_near.distance.toFixed(2)}; ` +
+    `object at depth ${depth_picked.toFixed(3)}`,
 );
 report(
   'and keeps its offset from the object as the view pans',
@@ -746,6 +783,38 @@ report(
     `${offset_panned.map((v) => v.toFixed(0))} after pan moved anchor ` +
     `${Math.hypot(panned.anchor[0] - opened.anchor[0], panned.anchor[1] - opened.anchor[1])
       .toFixed(0)} px`,
+);
+// Pick same object again, after wheel took reader out until it is dot once more.
+//   Offer it holds is renewed, and camera comes in again. Wheel over object, so zoom stays
+//   anchored on it and it is still under pointer to be picked.
+const anchorOfPicked = () => page.evaluate((slot) => {
+  const rect = document.getElementById('gl').getBoundingClientRect();
+  const at = Array.from(nimAnchorScreen(slot, rect.width, rect.height));
+  return { x: rect.left + at[0], y: rect.top + at[1], in_front: at[2] > 0.5 };
+}, points_pickable[0]);
+const anchor_out = await anchorOfPicked();
+await page.mouse.move(anchor_out.x, anchor_out.y);
+// Out past sixty units, where 0.08 of radius is under floor dot's three pixels.
+for (let notch = 0; notch < 60; notch += 1) {
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(40);
+  if ((await readCamera()).distance > 60) break;
+}
+await settleCamera();
+const camera_notched = await readCamera();
+const repick_at = await anchorOfPicked();
+await page.mouse.move(repick_at.x + 4, repick_at.y + 3);
+await page.waitForTimeout(100);
+await page.mouse.click(repick_at.x + 4, repick_at.y + 3, { button: 'right' });
+await settleCamera();
+const camera_repicked = await readCamera();
+report(
+  'a second pick of the object the camera already holds comes in again',
+  repick_at.in_front && camera_notched.distance > 10 * camera_near.distance &&
+    camera_repicked.distance < 0.5 * camera_notched.distance &&
+    (await page.evaluate(() => nimSelectionSlots().length)) === 1,
+  `distance ${camera_near.distance.toFixed(2)} -> notch ${camera_notched.distance.toFixed(2)} ` +
+    `-> re-pick ${camera_repicked.distance.toFixed(2)}`,
 );
 await page.evaluate(() => clearSelection());
 
