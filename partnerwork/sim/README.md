@@ -117,7 +117,8 @@ solve.nim    a pose evaluated, seeded, refined, settled; routing
 sweep.nim    turning, moment by moment, until something gives
 read.nim     what a pose says about itself, still in body words
 draw.nim     a state as two pictures: from above, and from the side
-page.nim     the browser page, compiled to JS
+page.nim     the browser page, compiled to JS; its turn sliders are
+             carried the same way, and stop where the arms do
 laws.nim     what the model is held to, all of it about bodies and arms
 verdicts.nim the sim run as an instrument against the ontology's sheet
 verdicts.md  what it said, translated once and generated, not edited

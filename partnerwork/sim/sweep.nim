@@ -54,6 +54,9 @@ const
   STEP* = 0.02 ## Turns per moment of the sweep.
   SUBSTEPS = 4 ## Small moves per moment: an arm sliding round a flank needs
                ## the flank to move a little at a time.
+  CREEP* = STEP / SUBSTEPS.float ## Turns per small move: the most a body is
+               ## turned before the arms are asked to follow, here and on
+               ## the page, which carries its sliders the same way.
   SETTLING = 0.05 ## The comfort a fresh pose must gain to be taken over the
                   ## carried one, plus one unit per metre a joint would jump:
                   ## arms do not flip over for nothing.

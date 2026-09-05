@@ -7,8 +7,16 @@
 ##   Every control is a number going into the model, and every readout is a
 ##     number coming out of it.  Nothing on the page is drawn by the page.
 ##   A drag of a turn slider carries the pose from the last frame by small
-##     moves, as the sweeps do, so a wound arm stays wound; any other change
-##     -- a hand joined, a height, the rig -- settles the pose afresh.
+##     moves, as the sweeps do, so a wound arm stays wound; and where no
+##     small move holds the slider stops there, snapped back to the turn the
+##     arms reached, and the page says what blocked it.  A slider asks for a
+##     turn; the model has the turn it has reached; the two agree except
+##     while the arms are still creeping towards the ask, or at a block.  A
+##     pose is never settled afresh mid-turn -- a fresh pose has no memory,
+##     and would lay an arm through a body as happily as round it -- except
+##     the one re-organisation the sweep allows too, to a pose that goes
+##     round the bodies the same way.  Any other change -- a hand joined, a
+##     height, the rig -- settles the pose afresh.
 
 {.experimental: "strictFuncs".}
 
@@ -54,12 +62,21 @@ const BANDS = [("at the chest", Band.Torso), ("at the neck", Band.Neck),
                ("over the head", Band.Crown)]
 
 
+const
+  TURNS = [Knob.LeadTurn, Knob.FollowTurn] ## The two sliders that are carried.
+  PER_FRAME = 8 ## Small moves made per frame before the page is redrawn.
+
 var
-  dial: array[Knob, float] = [0.0, 0.0, 0.40, 0.64, 0.95]
+  dial: array[Knob, float] = [0.0, 0.0, 0.40, 0.64, 0.95] ## For the turns,
+    ## the turn the arms have reached.
+  wanted: array[Knob, float] = dial ## What the turn sliders ask for.
   joined: array[PAIRS.len, bool] = [true, false, false, false]
   band = Band.Torso
   carried: Option[Solved] ## The last pose, for a turn to carry on from.
   carriedKey = "" ## What that pose was of, so a changed hold settles afresh.
+  blocked: Option[Verdict] ## What refused the last small move asked for.
+  reseeds = 0 ## How often, since the pose was last settled afresh, the arms
+              ## got on by a fresh pose rather than a small move.
 
 
 func esc(text: string): string =
@@ -83,15 +100,19 @@ proc rigNow(): Rig =
   result.round[Part.Torso] = dial[Knob.TorsoRound]
 
 
-proc base(): State =
-  ## The world from the controls, with nothing solved yet.
+proc at(lead, follow: float): State =
+  ## The world from the controls at these turns, with nothing solved yet.
   let rig = rigNow()
   result = State(rig: rig, stance: facing(rig, max(dial[Knob.Apart], touching(rig))),
                  band: band)
   for i in chosen():
     result.links.add Link(ends: [(Body.One, PAIRS[i].a), (Body.Two, PAIRS[i].b)])
-  result.stance = turned(result.stance, Body.One, dial[Knob.LeadTurn])
-  result.stance = turned(result.stance, Body.Two, dial[Knob.FollowTurn])
+  result.stance = turned(result.stance, Body.One, lead)
+  result.stance = turned(result.stance, Body.Two, follow)
+
+proc base(): State =
+  ## The world at the turns the arms have reached.
+  at(dial[Knob.LeadTurn], dial[Knob.FollowTurn])
 
 
 proc keyOf(s: State): string =
@@ -101,22 +122,71 @@ proc keyOf(s: State): string =
     result.add &"/{ord(link.ends[0].arm)}{ord(link.ends[1].arm)}"
 
 
-proc solved(): Option[Solved] =
+func agrees(here: Solved; there: Option[Solved]): bool =
+  ## Whether a pose found at the next turn is one the arms can be carried
+  ## to from here: it holds, goes round the bodies the same way, and
+  ## crosses the same way.
+  there.isSome and
+    sameRoute(here.state, here.verdict, there.get.state, there.get.verdict) and
+    sameCrossings(here.state, here.verdict, there.get.state, there.get.verdict)
+
+
+proc crept(): bool =
+  ## Carry the pose from the turns reached towards the turns wanted, a
+  ## small move at a time, a few moves per call; whether it has arrived.
+  ##   A move that no small motion reaches is tried once more as the sweep
+  ##     tries it, by a fresh search held to the same way round the bodies;
+  ##     failing that the ask is pulled back to what was reached, and what
+  ##     refused the move is kept for the page to say.
+  var moves = 0
+  while moves < PER_FRAME:
+    let
+      dl = wanted[Knob.LeadTurn] - dial[Knob.LeadTurn]
+      df = wanted[Knob.FollowTurn] - dial[Knob.FollowTurn]
+      far = max(abs(dl), abs(df))
+    if far < 1e-9:
+      return true
+    let
+      n = max(1, int(ceil(far / CREEP - 1e-9)))
+      lead = dial[Knob.LeadTurn] + dl / n.float
+      follow = dial[Knob.FollowTurn] + df / n.float
+      next = at(lead, follow)
+      here = carried.get
+    var got = followed(next, here.state)
+    if not agrees(here, got):
+      got = settled(next)
+      if agrees(here, got):
+        inc reseeds
+      else:
+        blocked = some(reason(next, here.state))
+        for k in TURNS: wanted[k] = dial[k]
+        return true
+    carried = got
+    blocked = none(Verdict)
+    dial[Knob.LeadTurn] = lead
+    dial[Knob.FollowTurn] = follow
+    inc moves
+  false
+
+
+proc solved(): tuple[got: Option[Solved], arrived: bool] =
   ## The pose for the controls, with its verdict: carried from the last one
-  ## where only a turn has moved, settled afresh otherwise.
-  let s = base()
+  ## where only a turn has moved, settled afresh otherwise; and whether the
+  ## arms have got where the sliders ask, or must go on next frame.
+  let s = at(wanted[Knob.LeadTurn], wanted[Knob.FollowTurn])
   if s.links.len == 0:
-    return none(Solved)
+    carried = none(Solved)
+    return (none(Solved), true)
   let key = keyOf(s)
   if carried.isSome and key == carriedKey:
-    result = followed(s, carried.get.state)
-    if result.isSome and sameRoute(carried.get.state, carried.get.verdict,
-                                   result.get.state, result.get.verdict):
-      carried = result
-      return
-  result = settled(s)
-  carried = result
+    let arrived = crept()
+    return (carried, arrived)
+  for k in TURNS: dial[k] = wanted[k]
+  blocked = none(Verdict)
+  reseeds = 0
+  carried = settled(s)
   carriedKey = key
+  (carried, true)
 
 
 func deg(r: float): string = $int(round(r * 180.0 / PI))
@@ -183,7 +253,12 @@ proc readout(s: State; v: Verdict; on: seq[int]): string =
     "</table>" &
     &"""<p class="limit">The pose <b class="{(if v.ok: "spare" else: "short")}">{says(s, v)}</b>; """ &
     &"""the hands are at <b>{formatFloat(s.params[0].g.z, ffDecimal, 2)} m</b>, """ &
-    &"""and the couple's twist is <b>{formatFloat(twist(s.stance) / (2.0 * PI), ffDecimal, 2)} turns</b>.</p>""" &
+    &"""and the couple's twist is <b>{formatFloat(twist(s.stance) / (2.0 * PI), ffDecimal, 2)} turns</b>.""" &
+    (if reseeds == 1: " On the way here the arms re-organised once: a fresh pose, the same way round the bodies, where no small move held."
+     elif reseeds > 1: &" On the way here the arms re-organised {reseeds} times: fresh poses, the same way round the bodies, where no small move held."
+     else: "") &
+    (if blocked.isSome: &""" <b class="short">Turning further is blocked here</b>: {says(s, blocked.get)}. The slider stops where the arms do.""" else: "") &
+    "</p>" &
     (if cross.len > 0: &"<ul class=\"met\">{cross}</ul>" else: "")
 
 
@@ -213,6 +288,9 @@ proc mount() =
     """<div id="limit"></div></div>""")
 
 
+proc paint()
+
+
 proc render() =
   ## Redraw what the state says, leaving the controls where they are.
   let on = chosen()
@@ -225,7 +303,18 @@ proc render() =
   for i, (name, b) in BANDS:
     document.getElementById(cstring(&"bd{i}")).className =
       cstring(if b == band: "pick on" else: "pick")
-  let got = solved()
+  let (got, arrived) = solved()
+  for k in TURNS:
+    # The label says where the arms are; the slider is put back there too
+    # once they have stopped, so a thumb dragged past a block snaps to it.
+    document.getElementById(cstring(&"dv{ord(k)}")).textContent =
+      cstring(&"{formatFloat(dial[k], ffDecimal, 3)}{DIALS[k].unit}")
+    if arrived:
+      let input = cast[InputElement](document.querySelector(cstring(&"input[data-dial=\"{ord(k)}\"]")))
+      if input != nil and abs(parseFloat($input.value) - dial[k]) > 1e-9:
+        input.value = cstring(formatFloat(dial[k], ffDecimal, 3))
+  if not arrived:
+    paint()
   if got.isNone:
     document.getElementById("stage").innerHTML = cstring(
       draw.plan(base(), Verdict()) & draw.elevation(base(), Verdict()))
@@ -245,7 +334,8 @@ var pending = false ## Whether a redraw is already booked for the next frame.
 
 
 proc paint() =
-  ## Redraw at most once a frame, however fast the controls are moved.
+  ## Redraw at most once a frame, however fast the controls are moved; and
+  ## again after, while the arms are still creeping towards a slider.
   if pending:
     return
   pending = true
@@ -296,7 +386,12 @@ proc slide(event: Event) =
   if target == nil or target.getAttribute("data-dial") == nil:
     return
   let which = Knob(parseInt($target.getAttribute("data-dial")))
-  dial[which] = parseFloat($cast[InputElement](target).value)
+  let value = parseFloat($cast[InputElement](target).value)
+  if which in TURNS:
+    wanted[which] = value
+  else:
+    dial[which] = value
+    wanted[which] = value
   paint()
 
 
