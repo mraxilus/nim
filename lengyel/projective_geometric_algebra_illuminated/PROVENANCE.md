@@ -52,7 +52,7 @@ Render Paths
 | `visualiser/core` | Both | `objects`, `euclid`, `boundary`, `mesh`, `tessellate`, `camera`, |
 |  |  | `scene`, `selection`, `picking`, `marker`, `framing`, `interaction`, |
 |  |  | `storyboard`, `orrery`, `neighbourhood`, `starfield`, `history`, |
-|  |  | `format`, `help`, `timings`, `ramp`, `algebra_trace`, `algebra_view` |
+|  |  | `format`, `help`, `timings`, `ramp` |
 | `visualiser/desktop` | `visualiser.nim` | `panel`, `renderer`, `opengl`, `gui`, `gui_shim.cpp`, |
 |  |  | `sdl3`, `image`, `gif`, `arena` |
 | `visualiser/browser` | `browser_bridge.nim` | `browser_bridge.nim`, `shell.html`, `glue.js` |
@@ -89,8 +89,8 @@ everything else relies on is that **a slot number stays valid until its item is 
 rather than to capacity. It only rises, so walking to it is safe. Three walks legitimately
 run to capacity — the free list and the two object-pool strips, whose subject is how much
 room is left — and `bound`'s own doc names them. A walk to capacity over five live objects
-cost 13.3 ms a frame on the JS backend; the debug layer's driven pin crept 2.5 → 8.8 →
-13.3 ms across three capacity rises before that was found.
+cost 13.3 ms a frame on the JS backend; a driven pin crept 2.5 → 8.8 → 13.3 ms across
+three capacity rises before that was found.
 
 **`Scene.revision` counts edits, and every writer is inside `scene.nim`**: `addItem`,
 `removeItem`, `setInk`, `setVisible`, `replayFrom`, `setGeometryAt`. There is no
@@ -185,7 +185,7 @@ per step, extrapolated from one measurement at the earlier stamp-less layout.
 Colour Palette
 ---
 Five assignable hues — `Rose, Copper, Olive, Jade, Cobalt` — plus `Backdrop`, `AxisX/Y/Z`,
-`Grid`, `Guide`, `Outline`, `Algebra` and `Invalid` in one `Ink` enum
+`Grid`, `Guide`, `Outline` and `Invalid` in one `Ink` enum
 (`mesh.lut_ink_to_rgba`).
 
 **`Invalid` is a reserved magenta**: seeing it means an object is wrong. The drag band wears
@@ -243,12 +243,10 @@ eye: 0.62 luminance read well and *failed*, dimming having walked the green and 
 onto `Rose`'s own luminance (3.5 and 3.3 ΔE under red-green against the 4.0 floor); further
 down clears it, the axes landing below every categorical hue.
 
-**`Ink.Algebra`** is the debug layer's one hue, screened against every assignable slot and
-`Invalid` at the assignable floors (worst 8.2 against jade under tritanopia, 9.2 against
-cobalt under red-green, floor 6.0).
-
 `Ink.Outline` is retained although nothing draws with it: removing a categorical-adjacent
-entry shifts every later ordinal and corrupts the colours of a saved `.rgascene`.
+entry shifts every later ordinal and corrupts the colours of a saved `.rgascene`. The
+debug layer's `Ink.Algebra` *was* removed, with the file format going to version 6 to carry
+the shift; see Save/Load Format.
 
 **Seed hues.** `ground` keeps `INK_SEED_GROUND`'s olive and `o` keeps `INK_SEED_ORIGIN`'s
 copper — the two seeds that are not arbitrary — and `a`, `b`, `c` take the three that are
@@ -654,7 +652,7 @@ over 120. Assumed: that the 0.1 ms flat-buffer figure holds at the current caps;
 measured at 1,024 objects.
 
 
-Algebra Boundary And Debug Layer
+Algebra Boundary
 ---
 The **algebra owns geometry** — what a thing is and where it stands: construction,
 incidence, meets, joins, projections, nearest points, side tests; the world-space camera;
@@ -688,23 +686,16 @@ stand-off, a line's two vanishing points) because the cut the panel reports is b
 work, not by proc. `tessellate` takes its scratch as a parameter: the desktop hands it swap
 arena memory, the browser a fixed buffer.
 
-**The debug layer** (`algebra_trace`, `algebra_view`) records every multivector a frame
-computed and draws each as what it is, the way an engine draws its physics world over the
-art: a finite plane as a fog-faded lattice over the whole plane (`radiusOnPlaneFor`,
-`addGridFamily`, generalised from the ground), plus geometry the scene does not contain —
-the sight axis, the eye and near planes, the cursor's ray and where it meets the level. Both
-render paths call one `addFrameTrace`. **What it does not reach**: the per-candidate meets
-`rayPlaneHit` forms inside `pickNearest` — threading a collector back out would make the
-pure `pickNearest` a proc, and re-deriving the meets would show what the drawer computed
-rather than what the pick did. The ray the pick casts *is* drawn. Off by default, with its
-own diagnostics row beside the scene's. The trace is caller-owned scratch of `TRACED_MAX` =
-`ITEMS_MAX` + 16 entries: as a stack local it built ten thousand `Traced` objects a frame
-before recording five, 13.3 ms against 4.1 after. Its control reads **debug**, not
-"algebra" — a control named algebra read as the subject of the app.
+**The debug layer is gone.** A "debug" switch once drew every multivector a frame
+computed as what it is (a finite plane as a lattice over the whole plane, the sight axis,
+the cursor's ray); it never helped resolve anything and was removed entirely with its two
+modules, its palette slot, its `nimBuildFrame` flag, its diagnostics row and its four driven
+checks. What it left behind on purpose: `addGridFamily` and `radiusOnPlaneFor` still lay a
+lattice on any plane, since the ground is that case. Do not reintroduce it without being
+asked.
 
-*Checked.* Verified by suite: every moved form pinned to its algebraic reference. Verified by
-driven check: the layer draws more than the picture, and its cost band. Assumed: the µs per
-op figure, from one profile at 1,024 objects.
+*Checked.* Verified by suite: every moved form pinned to its algebraic reference. Assumed:
+the µs per op figure, from one profile at 1,024 objects.
 
 
 Selection And Markers
@@ -767,18 +758,20 @@ without being asked.
 object's own ink and outlined in the marker's stroke, so it reads as part of the marker
 family; hover and focus wear none, as they carry no pulse. Where it sits is one more
 decision `marker.nim` makes (`Marker.has_label`, `Marker.label_at`): centred `GAP_MARKER`
-plus half `HEIGHT_MARKER_LABEL` (14 px) above the outline's top at the object's own place —
+plus half `HEIGHT_MARKER_LABEL` (13 px) above the outline's top at the object's own place —
 a ring's top (so a held marker's swell lifts the label with it), the upper rail where it
 passes the line's support, a loop's or bands' highest projected point — and, for the sky's
 frame, just inside the top edge, since above a frame that is the viewport is off screen.
 Placed with the marker rather than by each front-end so the two agree by construction;
 each centres its own text on the point and keeps its own face (the page's sans at the shared
 height, set by `glue.js` from `nimOverlayMetrics`; Dear ImGui's loaded font on the desktop).
-The browser stages one SVG `<text>` per selected slot with `paint-order: stroke`, the ink
-colour read into a table once at start-up (`COLOUR_INK_CSS`, since `nimInkColor` builds a
-sequence per call); the desktop has no stroked text, so `guiOverlayLabel` draws the text at
-the eight one-pixel offsets in the stroke colour beneath the fill, on the background list
-the markers use. The label position crosses the bridge through `nimSelectionLabelAt` over a
+The browser stages one SVG `<text>` per selected slot with `paint-order: stroke` and a
+1.5 px halo (`WIDTH_LABEL_STROKE`, about a tenth of the 13 px semibold face, map-label
+practice — 3 px at 14 px swamped the counters), the ink colour read into a table once at
+start-up (`COLOUR_INK_CSS`, since `nimInkColor` builds a sequence per call); the desktop
+has no stroked text, so `guiOverlayLabel` draws the text at the eight one-pixel offsets in
+the stroke colour beneath the fill, on the background list the markers use. The label
+position crosses the bridge through `nimSelectionLabelAt` over a
 fixed buffer, reading the marker `nimSelectionMarker` just shaped. Verified: the suite pins
 every kind's placement, the browser pin finds two labels for two selected objects in the
 right ink and stroke above the anchor and none once cleared, and both front-ends were
@@ -984,6 +977,18 @@ Interaction Model
 **Which button does what, stated once.** `interaction.revealsMenuOn` says whether a click
 brings the floating selection menu (right yes, left and middle no); `armingOf` says whether
 a drag opens the choice wheel. Both render paths and `help.nim` read them.
+
+**The selection menu opens beside the pointer and stays with the object.** A click or tap
+that reveals the menu puts its top-left corner `INSET_MENU_POINTER` = 8 px from the pointer,
+as every desktop context menu does, and the menu remembers its **offset from the object's
+anchor** (`offset_menu_selection` in `glue.js`; `corner_menu_pointer` turned into
+`offset_menu_selection` on first layout in `panel.nim`) so orbiting or the pick's own
+recentring carries it with the object rather than snapping it back to the object's centre —
+which the per-frame follow used to do one frame after a click had placed it. A menu opened
+with no pointer (objects list, keyboard, a hold that matured) sits above the anchor as
+before, pinned by its bottom middle on the desktop and lifted `LIFT_MENU_ANCHOR` = 60 px on
+the browser. Verified by driven check: a right-click 15 px off a point's anchor opens the
+menu within the inset of the click, and a pan moves menu and anchor by the same delta.
 
 | Gesture | Does |
 |---|---|
@@ -1321,7 +1326,7 @@ because every file already written contained it. The desktop converts through
 | Bytes | Field |
 |-------|-------|
 | 4 | Magic `RGAS` |
-| 1 | Format version (`VERSION_SCENE` = 5) |
+| 1 | Format version (`VERSION_SCENE` = 6) |
 | 1 | Basis count (16 under this build); must match |
 | 4 | Item count, little-endian `uint32` |
 | per item | Ink (1), visibility (1), label length in bytes (1) + UTF-8, one |
@@ -1339,8 +1344,13 @@ side; `nimSceneSlots` keeps slot order for the combo boxes indexed by position).
 is the whole of what version 3 added; version 4 appended the radius after each item's
 geometry and version 5 the shines byte after that, and which versions carry each is
 `scene.hasRadius`/`hasShine`, reached by the browser parser through
-`nimSceneHasRadius`/`nimSceneHasShine` rather than literals. Omitted on purpose: slot numbers, a
-per-item ordinal, fixed-width label padding.
+`nimSceneHasRadius`/`nimSceneHasShine` rather than literals. Version 6 changed no byte: it
+records that the palette lost its structural `Algebra` slot at ordinal 7, so every hue a
+version-2-to-5 file wrote sits one past today's, and `upgradedFrom5` takes it down (a byte
+naming the slot itself is refused, since no build assigned it to an object). The version-1
+fold therefore lands in version 2's dialect, one past today's, and is taken down by the same
+step — the suite pins both, ordinal by ordinal. Omitted on purpose: slot numbers, a per-item
+ordinal, fixed-width label padding.
 
 **A loaded scene replays its construction.** `born` is not written, but
 `scene.bornReplaying(index, count, now)` stamps the `index`-th of `count` arrivals a beat
@@ -1437,11 +1447,11 @@ frame and `glue.js` keeps the buffer it uploaded. The grid and axes were 15 ms o
 opening-scene build; held, the median fell 34.4 → 5.8 ms over 48 of 48 idle frames.
 
 **A still frame rebuilds nothing.** `SettingsScene` carries the furniture tuple, the
-aspect, `scene.revision`, `Selection.revision` and the debug flag; where it matches the last
-frame's, the bridge skips the tessellation, **the flattens and the uploads together** (held
-separately they buy nothing). Three states refuse the hold: a ghost or drag preview follows
-the pointer; the debug layer draws the cursor's ray; an item still inside its appear
-animation is drawn differently every frame — read off `BORN_LAST`, a watermark carried by
+aspect, `scene.revision` and `Selection.revision`; where it matches the last frame's, the
+bridge skips the tessellation, **the flattens and the uploads together** (held separately
+they buy nothing). Two states refuse the hold: a ghost or drag preview follows the pointer;
+an item still inside its appear animation is drawn differently every frame — read off
+`BORN_LAST`, a watermark carried by
 `stampBorn`, rather than by scanning every stamp. Refusing costs one rebuilt frame; holding
 wrongly freezes the picture. Under the demo, still camera: the bridge's build 18.2 → 0.6 ms.
 
@@ -2349,9 +2359,9 @@ figures, and the bands are stated as what catches the collapse class a reader fe
 as this container's timings: identical code has measured 25.0 and 29.8 ms hours apart on the
 shared runner, a flat ±1 ms band failed one frame in a hundred and twenty, and a flaky check
 gets deleted rather than fixed. Three harness facts worth keeping: a driven check is evidence
-only for the page just built, which `verify.sh` guarantees by ordering; one check switches the
-debug layer on and never off, so later measurements include ~1,650 lattice records and say
-so; a fresh object starts its pulse at zero, so a comet check waits for a head before timing.
+only for the page just built, which `verify.sh` guarantees by ordering; a check that leaves
+state behind (a chip on, a section open) taxes every check after it, and says so; a fresh
+object starts its pulse at zero, so a comet check waits for a head before timing.
 
 *Checked.* Verified: everything in this file marked so was established by one of these
 layers. Assumed: nothing about the suite itself.
