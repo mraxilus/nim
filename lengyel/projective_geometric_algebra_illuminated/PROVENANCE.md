@@ -2157,16 +2157,17 @@ fraction)` = diameter / (2·fraction·tan(fov/2)), the depth at which a world di
 that fraction of the frame (a disc's projected major axis is its diameter whatever its
 tilt, so it serves the point's ball and the plane's disc alike). A point drawn at the floor dot
 (`DIAMETER_POINT_LEAST`, its true radius under three pixels) is only a place, so the
-camera comes in until its disc spans `FRACTION_HEIGHT_APPROACH_POINT` = 0.05 of the
+camera comes in until its disc spans `FRACTION_HEIGHT_APPROACH_POINT` = 0.01 of the
 frame's height (a sixth of the frame, the first setting, was too close: the object filled
-the view with nothing about it; both fractions were chosen by eye). A point seen at its
+the view with nothing about it, and a twentieth still was; both fractions were chosen by
+eye). A point seen at its
 size, and a line, come in no further than the orbit distance, so a reader at working
 scale picking operands keeps that scale (the opening scene's 0.08-radius points from Home
 are 9 px across, and a click slides in without zooming); and neither moves the eye further
 off than the object already stands. A plane is framed **both ways**: its disc's centre
 (`tessellate.anchorFor` with the stored anchor, the centre the disc is drawn about) is
 brought to the depth where the disc's diameter `2·EXTENT_PLANE_F` spans
-`FRACTION_HEIGHT_APPROACH_PLANE` = 0.30, in from afar and back from a plane filling the
+`FRACTION_HEIGHT_APPROACH_PLANE` = 0.40, in from afar and back from a plane filling the
 view, while the crossing under the pointer stays the held anchor — moving the eye along
 its line to the crossing by factor *s* puts the centre at depth d_c − d_a + s·d_a, so the
 crossing ends at D − d_c + d_a, and where that is not positive (the centre further behind
@@ -2187,10 +2188,10 @@ at 168. `aimAt`'s `is_renewed` re-arms the ease for a pointer pick whatever the 
 holds. Verified by suite (the pixel stays within 0.01 px through five steps of the ease
 and the arrival distance equals the fit; a near point and a line keep the orbit distance;
 a pair holds no anchor; a re-pick after `abandon` and a dolly re-arms) and by driven check
-on the browser (from 45 units a right-click brings the eye to 3.86 with the anchor
+on the browser (from 45 units a right-click brings the eye to 19.3 with the anchor
 drifting 0.00 px in flight and settled and the target at the object's depth; a second pick
-after wheeling out to 69 comes in to 3.86 again; a right-click on the opening scene's
-ground plane from Home settles its centre at 64.38, exactly the depth wanted for 0.30).
+after wheeling out past 100 comes in to 19.3 again; a right-click on the opening scene's
+ground plane from Home settles its centre at 48.28, exactly the depth wanted for 0.40).
 The suite pins the plane's arrival from 12 units and from 1, the crossing's pixel held
 through both. Both front-ends rendered and looked at.
 
