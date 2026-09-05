@@ -841,6 +841,9 @@ proc drawMeshes*(
   ##     Tail leaves selected line over other lines and still tinted by plane's wash,
   ##     because wash is later kind and overlay run writes no depth for it to be rejected
   ##     against.
+  ##   Overlay is drawn against depth buffer cleared first, not with test off.
+  ##     Nothing unselected is left to reject against, so selected object shows through
+  ##     whatever stands before it; selected objects still reject one another by depth.
   gl.useProgram(renderer.program_ribbon)
   gl.uniformMatrix4fv(
     renderer.location_ribbon_view_projection, 1, gl.FALSE, view_projection.elementsAddress
@@ -918,19 +921,21 @@ proc drawMeshes*(
   renderer.drawWashRuns(meshes, is_overlay = false)
   gl.depthMask(gl.TRUE)
 
-  # Draw overlay over all of it, with no depth test.
-  #   Turns writes off with it, so same kind order decides what is over what among
-  #   selected objects.
+  # Draw overlay over all of it, against depth cleared first.
+  #   With test off, emission order decided among selected objects, and planet selected
+  #   after its moon buried moon standing in front of it. Washes write no depth here
+  #   either, as above.
   if meshes.hasOverlay:
-    gl.disable(gl.DEPTH_TEST)
+    gl.clear(gl.DEPTH_BUFFER_BIT)
     gl.useProgram(renderer.program_ribbon)
     renderer.drawRibbonRun(meshes, is_overlay = true)
     gl.useProgram(renderer.program_ring)
     renderer.drawRingRun(meshes, is_overlay = true)
     gl.useProgram(renderer.program)
     renderer.drawPointRun(meshes, is_overlay = true)
+    gl.depthMask(gl.FALSE)
     renderer.drawWashRuns(meshes, is_overlay = true)
-    gl.enable(gl.DEPTH_TEST)
+    gl.depthMask(gl.TRUE)
   gl.bindVertexArray(0)
 
 

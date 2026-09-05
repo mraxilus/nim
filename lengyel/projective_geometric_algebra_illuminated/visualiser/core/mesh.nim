@@ -321,8 +321,9 @@ type
     vertices*: array[VERTICES_MAX, Vertex]
     count_vertices*: int
     index_overlay*: Option[int] ## Where overlay run begins, if this mesh has one.
-      ## Vertices below it are drawn against depth buffer; rest are drawn after with test
-      ## off, landing over whatever is there.
+      ## Vertices below it are drawn against depth buffer; rest are drawn after against
+      ## depth cleared first, landing over whatever is there and in depth order among
+      ## themselves.
       ##   `markOverlay` sets it, and each render path draws two runs as two calls; see
       ##   `renderer.drawRun`.
       ## None where nothing asked to be drawn over; zero means whole mesh is overlay.

@@ -4736,21 +4736,27 @@ function renderFrame(now_seconds) {
   drawWashRuns(data.wash_runs, data.wash_run_over, false);
   gl.depthMask(true);
 
-  // Draw overlay over all of it, with no depth test at all.
-  //   Turns writes off with it, so nothing here occludes anything either.
+  // Draw overlay over all of it, against depth buffer cleared first.
+  //   Cleared rather than test turned off: nothing unselected is left to reject against,
+  //   so selected object still shows through whatever stands before it, and selected
+  //   objects reject one another by depth exactly as main pass does. With test off,
+  //   emission order decided among them, and selected planet drawn after its moon
+  //   buried moon standing in front of it.
   //   Second pass over every kind rather than tail on each: selected line drawn only
   //   after other lines is still tinted by plane's wash, which is later kind.
+  //   Washes write no depth here either, as in main pass.
   //   Mirrors `renderer.drawMeshes`.
   if (data.ribbon_over + data.ring_over + data.point_over + data.wash_run_over > 0) {
-    gl.disable(gl.DEPTH_TEST);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.useProgram(program_ribbon);
     drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, true);
     gl.useProgram(program_ring);
     drawRings(count_ring, data.ring_over, true);
     gl.useProgram(program);
     drawPoints(count_point, data.point_over, true);
+    gl.depthMask(false);
     drawWashRuns(data.wash_runs, data.wash_run_over, true);
-    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
   }
   // Command submission only:
   //   GL runs asynchronously, so what CPU clock can honestly bracket here is upload and draw-call

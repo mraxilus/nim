@@ -277,7 +277,7 @@ func toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
 
 
 func countOverlay(mesh: Mesh): int =
-  ## Count how many of one mesh's vertices are its overlay run, drawn with no depth test.
+  ## Count how many of one mesh's vertices are its overlay run, drawn over cleared depth.
   ##   Zero where nothing asked to be drawn over; see `mesh.Mesh.index_overlay`.
   if mesh.index_overlay.isNone: return 0
   max(0, mesh.count_vertices - clamp(mesh.index_overlay.get, 0, mesh.count_vertices))
@@ -2006,7 +2006,7 @@ type FrameData = object
     ##   Kinds differ by order of magnitude: point is single vertex, plane places rim of
     ##   `mesh.SEGMENTS_CIRCLE_HORIZON` segments.
     ##   `sky` is horizon planes drawn first; `ghost` is staged edit and drag preview
-    ##   together; `selected` is overlay tail, drawn again with depth test off.
+    ##   together; `selected` is overlay tail, drawn again over cleared depth.
     ##   Timed by clock read once per object: mark from end of one is start of next.
     ##     Clock's own overhead lands inside `ms_scene`; figures in `PROVENANCE.md`.
   count_points, count_lines, count_planes, count_sky, count_ghost, count_selected: int
@@ -2015,7 +2015,7 @@ type FrameData = object
   count_points_culled: int ## Count points skipped for lying outside view.
     ## Beside `count_points`, so panel can say drawn of standing; see `isPointInView`.
   ribbon_over, ring_over, point_over, wash_run_over: int ## How much of each stream's end
-    ## is overlay run, drawn after rest with depth test off.
+    ## is overlay run, drawn after rest over cleared depth.
     ## Count of tail rather than index it starts at, so glue subtracts nothing; see
     ## `mesh.Mesh.index_overlay` and `renderer.drawRun`.
     ## Vertices for points, records for ribbons and rings, whole runs for washes.
@@ -2279,7 +2279,7 @@ proc nimBuildFrame(
         placed_preview.kind, is_sky = false, is_ghost = true, is_selected = false
       )
 
-    # Emit everything selected last, drawn with depth test off.
+    # Emit everything selected last, drawn over cleared depth.
     #   Picked object is then never buried.
     #   Mirrors `visualiser.assembleMeshes`.
     markOverlay(MESHES)

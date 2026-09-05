@@ -436,7 +436,7 @@ proc assembleMeshes(
       anchor_override = interaction.preview.get.anchor,
     )
 
-  # Emit everything selected last, drawn with depth test off.
+  # Emit everything selected last, drawn over cleared depth.
   #   Picked object is then never buried by whatever stands between it and camera.
   #   Lasts as long as selection does.
   #   Horizon plane selected comes through here too, costing its dome first-in-bucket
