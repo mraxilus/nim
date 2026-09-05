@@ -14,9 +14,12 @@
 ##     joints are furthest from their limits -- stepping in or out a
 ##     centimetre at a time whenever that leaves the arms freer.
 ##   A quarter is walked in small moves, as the sweeps walk a turn, so a
-##     wound arm stays wound; where no small move holds the turn stops
-##     there, the tally shows how far it got, and the page says what
-##     blocked it.  A pose is never settled afresh mid-turn -- a fresh pose
+##     wound arm stays wound; where no small move holds the whole quarter
+##     is refused -- the couple are put back where they started it, and the
+##     page says how far it got and what blocked it -- so the tallies are
+##     always whole quarters.  The couple never stand closer than ten
+##     centimetres of clear air between their torsos, whichever way they
+##     face.  A pose is never settled afresh mid-turn -- a fresh pose
 ##     has no memory, and would lay an arm through a body as happily as
 ##     round it -- except the one re-organisation the sweep allows too, to a
 ##     pose that goes round the bodies the same way.  Changing the hands or
@@ -63,6 +66,7 @@ const
   REST_APART = 0.40 ## Where the couple stand before the arms have a say.
   APART_STEP = 0.01 ## How far they step in or out at a time.
   APART_MOST = 0.90 ## Further than this no hold reaches anyway.
+  GAP = 0.10 ## The least clear air between the torsos, metres.
   PER_FRAME = 8 ## Small moves made per frame before the page is redrawn.
   SHIFTS = 3 ## Steps in or out tried after each small move of a turn.
   SETTLING_SHIFTS = 40 ## And from a fresh rest, before the first turn.
@@ -77,7 +81,12 @@ var
   tally: array[Way, float] ## Turns made each way since the rest, signed.
   inFlight: Option[Move] ## The quarter being walked, if one is.
   done = 0.0 ## How much of it has been walked, nought to one.
-  blocked: Option[Verdict] ## What refused the last small move asked for.
+  moveStart: Option[Solved] ## Where the quarter in flight set off from.
+  tallyStart: array[Way, float] ## And the tallies then.
+  reseedsStart = 0
+  blocked: Option[Verdict] ## What refused the last quarter asked for.
+  blockedWay = Way.LeadAxis ## Which quarter that was,
+  blockedAfter = 0.0 ## and how far into it the arms got, in turns.
   reseeds = 0 ## Fresh poses taken since the rest where no small move held.
 
 
@@ -149,6 +158,24 @@ func shifted(st: array[Body, Stance]; by: float): array[Body, Stance] =
                              st[Body.Two].centre.y + uy * by)
 
 
+func leastApart(rig: Rig; st: array[Body, Stance]): float =
+  ## The closest the two may stand, axis to axis, with `GAP` of clear air
+  ## between their torsos along the line between them, whichever way each
+  ## faces: each torso's half-extent along that line, and the gap.
+  let
+    apart = apartOf(st)
+    dx = (st[Body.Two].centre.x - st[Body.One].centre.x) / apart
+    dy = (st[Body.Two].centre.y - st[Body.One].centre.y) / apart
+    a = halfBreadth(rig, Part.Torso)
+    b = halfDepth(rig, Part.Torso)
+  result = GAP
+  for who in Body:
+    let
+      dr = dx * sin(st[who].facing) - dy * cos(st[who].facing)
+      df = dx * cos(st[who].facing) + dy * sin(st[who].facing)
+    result += sqrt((a * dr) * (a * dr) + (b * df) * (b * df))
+
+
 #[ Carrying ]#
 
 
@@ -190,7 +217,7 @@ proc steppedIn(here: var Solved): bool =
   ##     real, and taken only if it delivers.
   let
     apart = apartOf(here.state.stance)
-    least = touching(here.state.rig) + 0.02
+    least = leastApart(here.state.rig, here.state.stance)
   var
     best = here.verdict
     by = 0.0
@@ -213,11 +240,15 @@ proc steppedIn(here: var Solved): bool =
 proc settleFresh() =
   ## The hold at rest, solved from nothing, and the couple stepped in or
   ## out from there until the arms are as free as they get.
-  let s = world()
+  var s = world()
+  let least = leastApart(s.rig, s.stance)
+  if apartOf(s.stance) < least:
+    s = world(least)
   carried = settled(s)
   carriedKey = keyOf(s)
   for w in Way: tally[w] = 0.0
   inFlight = none(Move)
+  moveStart = none(Solved)
   done = 0.0
   blocked = none(Verdict)
   reseeds = 0
@@ -235,8 +266,9 @@ proc walked(): bool =
   ## arrived or stopped.
   ##   A small move that no small motion reaches is tried once more as the
   ##     sweep tries it, by a fresh search held to the same way round the
-  ##     bodies; failing that the quarter stops where it got to, and what
-  ##     refused the move is kept for the page to say.
+  ##     bodies; failing that the whole quarter is refused: the couple go
+  ##     back to where they set off from, and how far the arms got and what
+  ##     refused them is kept for the page to say.
   if inFlight.isNone or carried.isNone:
     return true
   let m = inFlight.get
@@ -256,12 +288,16 @@ proc walked(): bool =
         inc reseeds
       else:
         blocked = some(reason(next, here.state))
+        blockedWay = m.way
+        blockedAfter = done * QUARTER
+        carried = moveStart
+        tally = tallyStart
+        reseeds = reseedsStart
         inFlight = none(Move)
         return true
     var now = got.get
     tally[m.way] += m.sign * (frac - done) * QUARTER
     done = frac
-    blocked = none(Verdict)
     for i in 0 ..< SHIFTS:
       if not steppedIn(now):
         break
@@ -354,7 +390,7 @@ proc readout(s: State; v: Verdict): string =
     &"""they stand <b>{turns(apartOf(s.stance))} m</b> apart, and the hands are at <b>{turns(s.params[0].g.z)} m</b>. """ &
     &"""The pose <b class="{(if v.ok: "spare" else: "short")}">{says(s, v)}</b>.""" &
     (if reseeds > 0: &" On the way here the arms re-organised {(if reseeds == 1: \"once\" else: $reseeds & \" times\")}: a fresh pose, the same way round the bodies, where no small move held." else: "") &
-    (if blocked.isSome: &""" <b class="short">Turning further is blocked here</b>: {says(s, blocked.get)}. The turn stops where the arms do.""" else: "") &
+    (if blocked.isSome: &""" <b class="short">The next quarter that way is blocked</b> ({WAYS[blockedWay]}): after {turns(blockedAfter)} of it, {says(s, blocked.get)}; the couple stay where they were.""" else: "") &
     "</p>" &
     (if cross.len > 0: &"<ul class=\"met\">{cross}</ul>" else: "")
 
@@ -472,6 +508,9 @@ proc handle(event: Event) =
     if inFlight.isNone and carried.isSome:
       inFlight = some(Move(way: Way(parseInt($target.getAttribute("data-way"))),
                            sign: parseFloat($target.getAttribute("data-sign"))))
+      moveStart = carried
+      tallyStart = tally
+      reseedsStart = reseeds
       done = 0.0
       blocked = none(Verdict)
       paint()
