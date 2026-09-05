@@ -338,6 +338,37 @@ units selects Sol on this build and the ecliptic behind it on the previous one);
 ring sits `GAP_MARKER` outside the drawn pixels; `isPointInView` widens its side bounds by the
 point's own radius; `reachOf` adds the radius so the far clip holds the whole disc. The
 `gl.POINTS`/`gl_PointSize` path is gone from both targets, and with it `uRound`/`as_point`.
+  **What is under the pointer is what is picked.** The pick ranked points by pixel
+distance to their centres within a reach of `RADIUS_PICK_POINT` or the drawn radius, so a
+tap inside a planet's disc but nearer a background star's centre than the planet's selected
+the star through the planet, and a star just past the rim won from inside it. Now, where the
+cursor lies inside the drawn disc of some point, the nearest such disc to the eye wins over
+every point the cursor is not inside, however near their centres; the pixel reach decides
+only where the cursor is inside nothing (`picking.pickWalk`'s `consider`). Rival counting for
+the touch crowd rule follows the finger rather than the eye: a point covered by a nearer disc
+narrower than a fingertip is still a rival, since two overlapping dots are one blob to a
+finger and whichever is in front the reader may have meant the other; a point covered by a
+fingertip-wide body (`RADIUS_PICK_POINT` or wider) is not, a star behind a planet being no
+ambiguity for a finger on the planet (`coverOf`). The discs under the cursor are gathered in
+a fixed array of eight (`Hiders`, a planet and its moons at most; a ninth is dropped) as the
+walk goes, so covered rivals are only known once it ends: a second, points-only walk runs
+where a fingertip-wide disc lies under the cursor — the winner is already that disc, so no
+line or plane needs meeting again — and the common case is one walk. Depth in the point
+branch is read off the projection's homogeneous weight (`depthAlongSight`, held equal to the
+dot product against `forward` by suite) and the drawn radius off that depth
+(`radiusPixelsAtDepth`), so the branch builds nothing per point; the hover pick at 5,038
+went from 3.5 to 2.2 ms median on this container with that. Rejected: a candidate list per
+walk, an allocation per pointer event with dozens in reach on the star field; the rule
+"the nearest disc under the cursor hides everything deeper", which made a six-pixel dot
+under the finger hide the whole crowd behind it and turned the touch crowd rule's orbit into
+a construction; and dropping covered points from the crowd outright, which did the same for
+two overlapping dots. A point covered by a disc the cursor is *not* inside is left alone: it
+is reachable from beside its cover, and knowing it covered would take every disc, not the
+ones under the cursor. Verified: the suite pins a star behind a wider disc unpicked with one
+rival, a moon in front of it picked with two, a star straight behind a moon unpicked but
+counted, the planet winning from inside its rim over a star past it, and the star winning
+from outside; the browser pin hovers forty-eight samples across Jupiter's disc and finds
+nothing deeper than Jupiter.
   **Measured** on this container, largest demo, camera orbiting, before (sprites, branch head
 in a worktree) and after (discs), two rounds each, 1200×900: every CPU phase is unchanged
 within noise — cull off `build` 5.6–5.8 → 5.6–6.2 ms p50, `scene` 3.4–3.5 → 3.4–3.7; cull on
@@ -690,12 +721,19 @@ straight back to the next add.
 **A selected object is drawn over every other object.** One watermark per mesh
 (`index_overlay`, an `Option[int]` — an index of zero legitimately means "all of it", so a
 mesh nobody marked has to say *none*), set once per frame by `markOverlay`, then a second
-pass over **every** primitive kind with the depth test off. A second pass rather than a
-tail on each kind: the tail left a selected line tinted by a later wash. A watermark rather
-than a third `MeshSet`, because a set reserves every cap up front for a run that is usually
-one object. On the desktop marks draw on Dear ImGui's **background** list, beneath the
-panels, exactly as the object is; the drag menu alone stays on the foreground list, since it
-is a control being steered.
+pass over **every** primitive kind against a depth buffer cleared first. Cleared rather than
+the depth test turned off: nothing unselected is left to reject against, so a selected
+object still shows through whatever stands before it, while selected objects reject one
+another by depth exactly as the main pass does. With the test off, emission order decided
+among them — `SELECTION` in pick order — and a planet selected after its moon buried the
+moon standing in front of it (verified on the browser: the pixel at Io's centre, Io in
+front of Jupiter at the frame's middle, reads Io's colour with Io alone selected and with
+Jupiter selected too; before, Jupiter's blue). Washes write no depth in this pass either,
+as in the main one. A second pass rather than a tail on each kind: the tail left a selected
+line tinted by a later wash. A watermark rather than a third `MeshSet`, because a set
+reserves every cap up front for a run that is usually one object. On the desktop marks draw
+on Dear ImGui's **background** list, beneath the panels, exactly as the object is; the drag
+menu alone stays on the foreground list, since it is a control being steered.
 
 "Just built" and "currently selected" are one mechanism: one marker per selected slot,
 plain white, and every construction path replaces the selection with the slot it created.
