@@ -816,6 +816,47 @@ report(
   `distance ${camera_near.distance.toFixed(2)} -> notch ${camera_notched.distance.toFixed(2)} ` +
     `-> re-pick ${camera_repicked.distance.toFixed(2)}`,
 );
+// **Plane picked by pointer is brought to its size.** From Home, right-click opening
+// scene's ground plane off-centre: after settle its disc's centre stands at depth where
+// diameter `2*EXTENT_PLANE_F` spans 0.30 of frame's height, and menu is up.
+await clearTheGlass();
+await page.keyboard.press('Home');
+await settleCamera();
+await page.evaluate(() => clearSelection());
+const slot_plane = await page.evaluate(() => nimSceneSlots()
+  .find((slot) => nimItemShapeWord(slot) === 'plane' && nimItemLabel(slot) === 'ground'));
+const rect_gl = await page.evaluate(() => {
+  const r = document.getElementById('gl').getBoundingClientRect();
+  return { left: r.left, top: r.top, width: r.width, height: r.height };
+});
+const press_plane = {
+  x: rect_gl.left + rect_gl.width * 0.62, y: rect_gl.top + rect_gl.height * 0.7,
+};
+const hover_plane = await page.evaluate((at) => {
+  const gl = document.getElementById('gl');
+  nimUpdateCursor(at.x, at.y);
+  nimUpdateHover(gl.clientWidth, gl.clientHeight);
+  return nimHoverSlot();
+}, { x: press_plane.x - rect_gl.left, y: press_plane.y - rect_gl.top });
+await page.mouse.move(press_plane.x, press_plane.y);
+await page.waitForTimeout(100);
+await page.mouse.click(press_plane.x, press_plane.y, { button: 'right' });
+await settleCamera();
+const camera_plane = await readCamera();
+const centre_plane = await page.evaluate((slot) => Array.from(nimAnchorWorld(slot)), slot_plane);
+const depth_plane = depthOf(camera_plane, centre_plane);
+const fov_degrees = await page.evaluate(() => nimCameraFov());
+const depth_wanted = 16 / (2 * 0.3 * Math.tan((fov_degrees / 2) * Math.PI / 180));
+const is_menu_up_plane = await page.evaluate(
+  () => document.getElementById('selection-menu').classList.contains('show'),
+);
+report(
+  'a plane picked by pointer is brought to a third of the frame',
+  hover_plane === slot_plane && Math.abs(depth_plane - depth_wanted) < 0.01 * depth_wanted &&
+    is_menu_up_plane,
+  `hover ${hover_plane} (ground ${slot_plane}); disc centre at depth ` +
+    `${depth_plane.toFixed(3)}, wanted ${depth_wanted.toFixed(3)}`,
+);
 await page.evaluate(() => clearSelection());
 
 // **Selected object wears its name above its marker.** Placed by marker.nim, drawn as

@@ -3575,7 +3575,7 @@ suite "Camera Aim":
   test "a pointer pick keeps the object's pixel through the ease and ends at its fit":
     # What right-click promises: object clicked stays under pointer while camera comes.
     #   in, and dot (two pixels of radius, forty units out) comes in until its disc
-    #   spans `FRACTION_BOX_APPROACH` of centred box.
+    #   spans `FRACTION_HEIGHT_APPROACH_POINT` of frame's height.
     const
       DURATION = 0.35
       ASPECT = float(WIDTH_AIM)/float(HEIGHT_AIM)
@@ -3612,9 +3612,7 @@ suite "Camera Aim":
         check tween.is_arrived
         check camera.azimuth == placementAim(azimuth, elevation).azimuth
         check camera.elevation == placementAim(azimuth, elevation).elevation
-        let fit = distanceFitting(
-          RADIUS/FRACTION_BOX_APPROACH, camera, WIDTH_AIM, HEIGHT_AIM, INSET_POINT_SHOWN
-        )
+        let fit = depthSpanning(2.0*RADIUS, FRACTION_HEIGHT_APPROACH_POINT, camera)
         check abs(camera.distance - fit) < 1.0e-9
         # Target at anchor's depth: point and target equally far along sight.
         let eye_settled = camera.eye
@@ -3632,51 +3630,80 @@ suite "Camera Aim":
       scale = camera.drawExtentFor(HEIGHT_AIM)
       near = eye + 0.3*axes.forward + 0.02*axes.axis_right
       far = eye + 40.0*axes.forward + 3.0*axes.axis_up
-    let placed_near =
-      placementUnderPointer(near, 0.08, true, camera, scale, WIDTH_AIM, HEIGHT_AIM)
+    let placed_near = placementUnderPointer(near, Shape.Point, 0.08, near, camera, scale)
     check placed_near.isSome
     check abs(placed_near.get.distance - 0.3) < 1.0e-9
     check camera.placed(placed_near.get).eye =~ eye
     # Radius half unit stands forty out at thirteen pixels, plainly seen: orbit distance.
-    let placed_seen =
-      placementUnderPointer(far, 0.5, true, camera, scale, WIDTH_AIM, HEIGHT_AIM)
+    let placed_seen = placementUnderPointer(far, Shape.Point, 0.5, far, camera, scale)
     check placed_seen.isSome
     check abs(placed_seen.get.distance - camera.distance) < 1.0e-9
-    let placed_line =
-      placementUnderPointer(far, 0.0, false, camera, scale, WIDTH_AIM, HEIGHT_AIM)
+    let placed_line = placementUnderPointer(far, Shape.Line, 0.0, far, camera, scale)
     check placed_line.isSome
     check abs(placed_line.get.distance - camera.distance) < 1.0e-9
-    let placed_behind = placementUnderPointer(
-      eye - 2.0*axes.forward, 0.08, true, camera, scale, WIDTH_AIM, HEIGHT_AIM
-    )
+    let behind = eye - 2.0*axes.forward
+    let placed_behind = placementUnderPointer(behind, Shape.Point, 0.08, behind, camera, scale)
     check placed_behind.isNone
 
 
-  test "a plane or a group picked by pointer frames as ever":
-    # Plane is surface, every pixel of its disc is on it; group has to fit, which holding.
-    #   one pixel cannot promise. Both take `placementFor`, and neither holds anchor.
+  test "a depth spanning a fraction of the frame is read off the lens":
+    # Two units across at half of 45-degree frame: 2/(2*0.5*tan 22.5) = 4.83.
+    let camera = placementAim(0.0, 0.0)
+    check abs(depthSpanning(2.0, 0.5, camera) - 2.0/(2.0*0.5*tan(degToRad(22.5)))) < 1.0e-9
+    check depthSpanning(0.0, 0.5, camera) == DISTANCE_LIMIT_NEAR
+
+
+  test "a plane picked by pointer is brought to its size both ways, crossing held":
+    # Disc's centre comes to depth where its diameter spans.
+    #   `FRACTION_HEIGHT_APPROACH_PLANE` of frame, from too far and from too near alike,
+    #   while place under pointer keeps its pixel and angles stand.
+    const
+      DURATION = 0.35
+      ASPECT = float(WIDTH_AIM)/float(HEIGHT_AIM)
+    let ground = planeThrough(toMultivector(ORIGIN), toMultivector(UP_WORLD))
+    for distance in [12.0, 1.0]:
+      var camera = initCamera(target = ORIGIN, distance = distance, azimuth = 0.7, elevation = 0.5)
+      var (scene, picked) = sceneOf(ground)
+      let cursor = ScreenPosition(x: 0.62*float(WIDTH_AIM), y: 0.58*float(HEIGHT_AIM))
+      let scale = camera.drawExtentFor(HEIGHT_AIM)
+      let crossing =
+        positionUnderPointerOn(scene, picked.at(0), camera, scale, WIDTH_AIM, HEIGHT_AIM, cursor)
+      check crossing.isSome
+      var
+        tween: CameraTween
+        pointer = some(PointerPick(slot: picked.at(0), cursor: cursor))
+      tween.offerAim(
+        camera, scene, picked, none(Preview), scale, WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION,
+        pointer,
+      )
+      check tween.anchor_held.isSome
+      tween.settle(camera)
+      let eye = camera.eye
+      let depth_centre = dot(ORIGIN - eye, camera.frame(eye).forward)
+      let wanted = depthSpanning(2.0*EXTENT_PLANE_F, FRACTION_HEIGHT_APPROACH_PLANE, camera)
+      check abs(depth_centre - wanted) < 1.0e-6
+      check camera.azimuth == 0.7
+      check camera.elevation == 0.5
+      let pixel = projectToScreen(
+        camera.initMatrixViewProjection(ASPECT), WIDTH_AIM, HEIGHT_AIM, crossing.get
+      )
+      check abs(pixel.x - cursor.x) < 0.01
+      check abs(pixel.y - cursor.y) < 0.01
+
+
+  test "a group picked by pointer frames as ever":
+    # Group has to fit, which holding one pixel cannot promise: `placementFor`, no anchor.
     const DURATION = 0.35
     var camera = placementAim(1.6, 0.2)
-    let (scene_plane, picked_plane) = sceneOf(planeThrough(
-      toMultivector(Position(x: 0.0, y: 0.0, z: 0.0)), toMultivector(UP_WORLD)
-    ))
-    var
-      tween: CameraTween
-      pointer = some(PointerPick(
-        slot: picked_plane.at(0), cursor: ScreenPosition(x: 700.0, y: 450.0)
-      ))
-    tween.offerAim(
-      camera, scene_plane, picked_plane, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
-      WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION, pointer,
-    )
-    check tween.goal.isSome
-    check tween.anchor_held.isNone
     let (scene_two, picked_two) = sceneOf(
       toMultivector(Position(x: 14.0, y: -11.0, z: 3.0)),
       toMultivector(Position(x: -9.0, y: 12.0, z: -5.0)),
     )
-    var tween_two: CameraTween
-    pointer = some(PointerPick(slot: picked_two.at(1), cursor: ScreenPosition(x: 700.0, y: 450.0)))
+    var
+      tween_two: CameraTween
+      pointer = some(PointerPick(
+        slot: picked_two.at(1), cursor: ScreenPosition(x: 700.0, y: 450.0)
+      ))
     tween_two.offerAim(
       camera, scene_two, picked_two, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
       WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION, pointer,

@@ -46,10 +46,14 @@ const
   ROUNDS_PLACEMENT_LEAST* = 5
     ## Fix halvings run inside bracketed step.
     ##   Five puts answer within 1/384 of full move, under pixel of any pan or turn here.
-  FRACTION_BOX_APPROACH* = 0.25
-    ## Fix how much of centred box picked dot's disc spans once pointer pick has come in.
-    ##   Quarter of box is sixth of frame's height: object plainly seen, neighbours still
-    ##   about it. Whole box put moon's planet off screen.
+  FRACTION_HEIGHT_APPROACH_POINT* = 0.05
+    ## Fix how much of frame's height picked dot's disc spans once pointer pick has come in.
+    ##   Chosen by eye: sixth of frame was too close, object filling view with nothing
+    ##   about it; twentieth is plainly seen, neighbours still in frame.
+  FRACTION_HEIGHT_APPROACH_PLANE* = 0.30
+    ## Fix how much of frame's height picked plane's disc spans once pick has come in.
+    ##   Disc's major axis, whatever its tilt. Chosen by eye beside point's: plane that
+    ##   only ever pulled back to keep its rim on screen never came to be looked at.
 
 
 type PointerPick* = object ## Define pick made by pointer, awaiting camera's aim.
@@ -256,41 +260,54 @@ func placementFor*(
 
 
 func placementUnderPointer*(
-  anchor: Position; radius: float; is_sized: bool; camera: Camera; scale: DrawExtent;
-  width, height: int
+  anchor: Position; shaped: Shape; radius: float; centre: Position; camera: Camera;
+  scale: DrawExtent
 ): Option[CameraPlacement] =
   ## Resolve where camera ends after pointer pick, `anchor` kept on its pixel.
   ##   Wheel's own move (`camera.dollyToward` then `retargetToDepth`): eye comes in along
   ##   its line to anchor, angles untouched, target set on sight line at anchor's depth.
-  ##   How far in depends on what reader could see.
+  ##   How far in depends on shape and on what reader could see.
   ##     Point drawn at floor dot (`DIAMETER_POINT_LEAST`) is only place, so camera comes
-  ##     in until its disc spans `FRACTION_BOX_APPROACH` of centred box: moon picked from
-  ##     168 units out becomes moon.
+  ##     in until its disc spans `FRACTION_HEIGHT_APPROACH_POINT` of frame's height: moon
+  ##     picked from 168 units out becomes moon.
   ##     Point seen at its size, and line, come in no further than orbit distance: reader
   ##     at working scale picking operands keeps that scale, as ever.
-  ##   Never further off than anchor already stands: pick of object already close leaves
-  ##   picture as it is, target alone moving to its depth.
+  ##     Neither moves eye further off than anchor already stands: pick of object already
+  ##     close leaves picture as it is, target alone moving to its depth.
+  ##     Plane is framed both ways, disc's `centre` brought to depth where its diameter
+  ##     spans `FRACTION_HEIGHT_APPROACH_PLANE`, crossing under pointer held meanwhile.
+  ##       Eye moving along its line to anchor by factor `s` puts centre at depth
+  ##       `d_c - d_a + s*d_a`, so anchor ends at `D - d_c + d_a`.
   ##   Written out rather than through `dollyToward`, whose near floor scales eye's move
   ##   by less than factor asked and would leave target short of anchor's depth.
-  ##   None where anchor is not ahead of eye, leaving caller `placementFor`.
+  ##   None where anchor is not ahead of eye, or plane's centre stands further behind
+  ##   crossing than its depth to be, leaving caller `placementFor`.
   let
     eye = camera.eye
     forward = camera.frame(eye).forward
     depth_now = dot(anchor - eye, forward)
   if depth_now <= 1.0e-6: return
-  let
-    is_dot =
-      is_sized and radius < 0.5*float(DIAMETER_POINT_LEAST)*worldPerPixelAt(anchor, scale.scale)
-    depth_fit =
-      if is_dot:
-        distanceFitting(radius/FRACTION_BOX_APPROACH, camera, width, height, INSET_POINT_SHOWN)
-      else: camera.distance
-    depth_end = distanceHeld(min(depth_now, depth_fit))
-    # Assemble eye as anchor plus offset back toward where it stood, scaled by depths.
-    eye_settled = position(add(
-      toMultivector(anchor),
-      wedge(depth_end/depth_now, subtract(toMultivector(eye), toMultivector(anchor))),
-    ))
+  var depth_end = min(depth_now, camera.distance)
+  case shaped
+  of Shape.Point:
+    let is_dot =
+      radius < 0.5*float(DIAMETER_POINT_LEAST)*worldPerPixelAt(anchor, scale.scale)
+    if is_dot:
+      depth_end = min(
+        depth_now, depthSpanning(2.0*radius, FRACTION_HEIGHT_APPROACH_POINT, camera)
+      )
+  of Shape.Plane:
+    let depth_centre = dot(centre - eye, forward)
+    depth_end = depthSpanning(2.0*EXTENT_PLANE_F, FRACTION_HEIGHT_APPROACH_PLANE, camera) -
+      depth_centre + depth_now
+    if depth_end <= 1.0e-6: return
+  of Shape.Line: discard
+  depth_end = distanceHeld(depth_end)
+  # Assemble eye as anchor plus offset back toward where it stood, scaled by depths.
+  let eye_settled = position(add(
+    toMultivector(anchor),
+    wedge(depth_end/depth_now, subtract(toMultivector(eye), toMultivector(anchor))),
+  ))
   if eye_settled.isNone: return
   some(CameraPlacement(
     target: Position(
@@ -323,10 +340,9 @@ func offerAim*(
   ##   every frame selection stands.
   ##   `pointer` is pick made since last offer, consumed here whatever comes of it.
   ##     Guard is skipped for it: object already held, picked again, is taken to again.
-  ##     Where selection is exactly that point or line and nothing is staged, destination
-  ##     keeps it under pointer (`placementUnderPointer`); plane, group and horizon shape
-  ##     frame as ever. Plane is surface, every pixel of its disc is on it; group has to
-  ##     fit, which holding one pixel cannot promise.
+  ##     Where selection is exactly that object and nothing is staged, destination keeps
+  ##     it under pointer (`placementUnderPointer`); group and horizon shape frame as
+  ##     ever, since group has to fit, which holding one pixel cannot promise.
   # Take caller's extent, not second derivation.
   #   Building another here ran `algebraFilled` and `camera.frame`'s joins twice per frame.
   let aim = aimFor(scene, picked, staged, scale)
@@ -341,15 +357,18 @@ func offerAim*(
     anchor = none(Position)
   if pick.isSome and staged.isNone and picked.len == 1 and picked.at(0) == pick.get.slot and
       scene.isAlive(pick.get.slot):
-    let shaped = shape(scene.geometryOf(pick.get.slot))
-    if shaped.isSome and shaped.get in {Shape.Point, Shape.Line}:
+    let
+      m = scene.geometryOf(pick.get.slot)
+      shaped = shape(m)
+      # Size plane by disc it is drawn as, about its stored anchor.
+      centre = anchorFor(m, scene.anchorOverrideAt(pick.get.slot), scale)
+    if shaped.isSome and not isHorizon(m) and centre.isSome:
       anchor = positionUnderPointerOn(
         scene, pick.get.slot, camera, scale, width, height, pick.get.cursor
       )
       if anchor.isSome:
         destination = placementUnderPointer(
-          anchor.get, scene.radiusAt(pick.get.slot), shaped.get == Shape.Point,
-          camera, scale, width, height,
+          anchor.get, shaped.get, scene.radiusAt(pick.get.slot), centre.get, camera, scale
         )
   if destination.isNone:
     anchor = none(Position)

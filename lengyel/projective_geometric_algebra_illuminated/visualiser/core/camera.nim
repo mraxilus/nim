@@ -781,6 +781,17 @@ func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: 
   distanceHeld(radius/max(sine, 1.0e-6))
 
 
+func depthSpanning*(diameter, fraction: float; camera: Camera): float =
+  ## Solve depth along sight line at which world `diameter` spans `fraction` of frame's height.
+  ##   Flat projection: span in pixels is diameter over world-per-pixel at that depth
+  ##   (`mesh.worldPerPixelAt`), and disc's projected major axis is its diameter whatever
+  ##   its tilt, so one formula sizes point's ball and plane's disc alike.
+  ##   Held off near floor as every depth is.
+  ##   For pointer pick's approach; see `framing.placementUnderPointer`.
+  let tangent_half = tan(0.5*degToRad(camera.degrees_field_of_view))
+  distanceHeld(diameter/(2.0*max(fraction, 1.0e-6)*max(tangent_half, 1.0e-6)))
+
+
 func isGoalHeld*(tween: CameraTween, goal: CameraAim): bool =
   ## Report whether `goal` is one this tween already holds, and would ignore.
   ##   For caller whose preparation is worth skipping: `framing.offerAim` projects every
