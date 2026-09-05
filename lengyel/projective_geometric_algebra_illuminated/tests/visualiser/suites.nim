@@ -7041,6 +7041,87 @@ suite "Marker":
     check ringAt(0.0).isNone
 
 
+  test "a plane's label sits above the true top of its circle and glides as the camera turns":
+    # Sampled top hopped vertex to vertex as camera orbited, label with it; closed-form.
+    #   top moves continuously: no step more than twice one before it and pixel, even
+    #   where thin ellipse's top runs along its length. Label's top is never below any
+    #   sampled vertex, and within segment's sag of lowest one.
+    let lift = GAP_MARKER + 0.5*HEIGHT_MARKER_LABEL
+    var
+      hops_sampled = 0
+      hops_label = 0
+      x_sampled_before = none(float)
+      x_label_before = none(float)
+      step_sampled_before = 0.0
+      step_label_before = 0.0
+    var azimuth = 0.0
+    while azimuth < 2.0*PI:
+      let (placement, view_projection, scale) = setUpAt(azimuth, 0.4, 19.0)
+      let loop = shapedMarkerFor(
+        PLANE, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK
+      ).get
+      check loop.kind == MarkerKind.Loop and loop.has_label and loop.is_closed
+      var (x_sampled, y_lowest) = (0.0, Inf)
+      for i in 0 ..< loop.count_point:
+        if loop.points[i].y < y_lowest: (x_sampled, y_lowest) = (loop.points[i].x, loop.points[i].y)
+      let top_y = loop.label_at.y + lift
+      check top_y <= y_lowest + TOLERANCE_TEST
+      check top_y >= y_lowest - 1.0
+      if x_sampled_before.isSome:
+        let
+          step_sampled = abs(x_sampled - x_sampled_before.get)
+          step_label = abs(loop.label_at.x - x_label_before.get)
+        if step_sampled > 2.0*step_sampled_before + 1.0: inc hops_sampled
+        if step_label > 2.0*step_label_before + 1.0: inc hops_label
+        (step_sampled_before, step_label_before) = (step_sampled, step_label)
+      (x_sampled_before, x_label_before) = (some(x_sampled), some(loop.label_at.x))
+      azimuth += 0.002
+    check hops_label == 0
+    check hops_sampled > 0 # Failure this replaces, pinned.
+
+
+  test "a plane's label passes through the flip without a jump":
+    # Seen from just above, top is far rim; from just below, near rim. Label stands on.
+    #   disc centre's column at top's height, and both go to plane's horizon as ellipse
+    #   flattens: milliradian either side, labels stand under pixel apart. Disc off sight
+    #   axis too, where far top and near top themselves part in x.
+    let ground = planeThrough(toMultivector(ORIGIN), toMultivector(UP_WORLD))
+    for anchor in [none(Position), some(Position(x: 3.0, y: -4.0, z: 0.0))]:
+      var labels: seq[ScreenPosition]
+      for elevation in [0.001, -0.001]:
+        let (placement, view_projection, scale) = setUpAt(0.9, elevation, 19.0)
+        let loop = shapedMarkerFor(
+          ground, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK
+        ).get
+        check loop.has_label
+        labels.add(loop.label_at)
+      check abs(labels[0].x - labels[1].x) < 1.0
+      check abs(labels[0].y - labels[1].y) < 1.0
+
+
+  test "the top of a circle facing the camera is its centre less its radius":
+    # Same answer ring rule gives point, from closed form; none for circle behind eye.
+    let (placement, view_projection, scale) = setUp()
+    let
+      eye = placement.eye
+      axes = placement.frame(eye)
+      centre = Position(x: 0.0, y: 0.0, z: 0.0)
+    let top = topmostOnCircle(
+      centre, 2.0*axes.axis_right, 2.0*axes.axis_up, view_projection, WIDTH_MARK, HEIGHT_MARK
+    )
+    check top.isSome
+    let expected = projectToScreen(
+      view_projection, WIDTH_MARK, HEIGHT_MARK, centre + 2.0*axes.axis_up
+    )
+    check abs(top.get.x - expected.x) < 1.0e-6
+    check abs(top.get.y - expected.y) < 1.0e-6
+    let behind = topmostOnCircle(
+      eye - 2.0*axes.forward, 0.5*axes.axis_right, 0.5*axes.axis_up, view_projection,
+      WIDTH_MARK, HEIGHT_MARK,
+    )
+    check behind.isNone
+
+
   test "every marker places its name label above its own top, clear of the outline":
     # Where label sits is marker's decision, so both front-ends agree by construction.
     #   Ring: above its top. Rails: above upper rail at support. Loop and bands: above

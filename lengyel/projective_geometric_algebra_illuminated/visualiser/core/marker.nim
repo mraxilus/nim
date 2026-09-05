@@ -615,6 +615,46 @@ func placeLabelAboveTopmost(
       marker.placeLabelAbove(points[i].x, points[i].y)
 
 
+func topmostOnCircle*(
+  centre: Position; arm_first, arm_second: Direction; view_projection: Matrix4;
+  width, height: int
+): Option[ScreenPosition] =
+  ## Solve highest screen point of world circle `centre + cos·arm_first + sin·arm_second`.
+  ##   Closed form, so label above plane's circle glides as camera orbits.
+  ##     Highest of sampled vertices hopped segment by segment, label with it.
+  ##   Clip y and clip w are affine in (cos, sin): `N = a·cos + b·sin + c`,
+  ##   `D = d·cos + e·sin + f`. Screen y is monotone in `N/D`, stationary where
+  ##   `(b·d - a·e) + (c·d - a·f)·sin + (b·f - c·e)·cos = 0`, i.e. `R·cos + Q·sin = -P`,
+  ##   so angle is `atan2(Q, R) ± arccos(-P/√(Q²+R²))`: top and bottom, whichever is in
+  ##   front and higher.
+  ##   Continuous in camera, so caller's label glides; its height alone is read where
+  ##   flip matters, see `markerLoop`.
+  ##   None where circle is degenerate on screen (`√(Q²+R²)` vanishing) or neither
+  ##   candidate is in front of eye; caller falls back to sampled top.
+  template rowDot(row: int, d: Direction): float =
+    float(view_projection.at(row, 0))*d.x + float(view_projection.at(row, 1))*d.y +
+      float(view_projection.at(row, 2))*d.z
+  template rowAt(row: int, p: Position): float =
+    float(view_projection.at(row, 0))*p.x + float(view_projection.at(row, 1))*p.y +
+      float(view_projection.at(row, 2))*p.z + float(view_projection.at(row, 3))
+  let
+    (a, b, c) = (rowDot(1, arm_first), rowDot(1, arm_second), rowAt(1, centre))
+    (d, e, f) = (rowDot(3, arm_first), rowDot(3, arm_second), rowAt(3, centre))
+    (p, q, r) = (b*d - a*e, c*d - a*f, b*f - c*e)
+    reach = sqrt(q*q + r*r)
+  if reach < 1.0e-12: return
+  let
+    phase = arctan2(q, r)
+    spread = arccos(clamp(-p/reach, -1.0, 1.0))
+  for angle in [phase + spread, phase - spread]:
+    let at = projectToScreen(
+      view_projection, width, height,
+      onCircleAt(centre, arm_first, arm_second, cos(angle), sin(angle)),
+    )
+    if not at.isInFront: continue
+    if result.isNone or at.y < result.get.y: result = some(at)
+
+
 func markerRing(
   geometry: Multivector; radius: float; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; progress, clearance: float; marker: var Marker
@@ -959,10 +999,8 @@ proc markerLoop(
     axes = frame(geometry)
   if anchor.isNone or axes.isNone: return
 
-  let positions = positionsMarkerLoop(
-    anchor.get, axes.get,
-    progress*radiusMarkerLoop(anchor.get, scale, placement, height, clearance),
-  )
+  let radius_loop = progress*radiusMarkerLoop(anchor.get, scale, placement, height, clearance)
+  let positions = positionsMarkerLoop(anchor.get, axes.get, radius_loop)
   var
     ring: array[SEGMENTS_MARKER_LOOP, ScreenPosition]
     are_in_front: array[SEGMENTS_MARKER_LOOP, bool]
@@ -992,7 +1030,18 @@ proc markerLoop(
     if not are_in_front[i]: break
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
-  marker.placeLabelAboveTopmost(marker.points, marker.count_point)
+  # Place label on disc centre's column, at height of circle's true top.
+  #   Both continuous in camera, so label glides, and passes flip unseen: far rim's top
+  #   and near rim's top part in x for disc off sight axis, centre's column does not.
+  #   Sampled top only where true top is cut away.
+  let
+    top = topmostOnCircle(
+      anchor.get, radius_loop*axes.get.axis_first, radius_loop*axes.get.axis_second,
+      view_projection, width, height,
+    )
+    centre = projectToScreen(view_projection, width, height, anchor.get)
+  if top.isSome and centre.isInFront: marker.placeLabelAbove(centre.x, top.get.y)
+  else: marker.placeLabelAboveTopmost(marker.points, marker.count_point)
   if travel.isSome:
     # Anchor at circle's angle zero, walked back through cut; see `originAfterCut`.
     let track = trackAlong(
