@@ -3102,6 +3102,112 @@ report(
   culled.map((r) => `${r.on.points} of ${r.on.points + r.on.off} drawn, ` +
     `${r.on.hash === r.off.hash ? 'same' : 'different'} pixels`).join('; '),
 );
+
+// **Disc hides what stands behind it, on screen and under pointer.** Eye is set on
+// line from Jupiter through Io, beyond Io, so Io sits at middle of frame in front of
+// Jupiter's disc. Pointer sampled across disc must never hover anything deeper than
+// Jupiter: stars behind it used to win on distance to their own centres. Pixel at Io's
+// centre, read inside frame that drew it as culling check does, must be Io's whether
+// Io alone is selected or Jupiter with it: overlay drawn with depth off buried Io under
+// planet selected after it.
+const occluded = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  const slotOf = (label) => {
+    for (const s of nimSceneSlots()) if (nimItemLabel(s) === label) return s;
+    return -1;
+  };
+  const jupiter = slotOf('jupiter');
+  const io = slotOf('io');
+  const at = (s) => Array.from(nimAnchorWorld(s)).slice(0, 3);
+  const j = at(jupiter);
+  const m = at(io);
+  const heading = [m[0] - j[0], m[1] - j[1], m[2] - j[2]];
+  const span = Math.hypot(...heading);
+  // Put whole camera back after: later checks zoom at this sky from where it stood.
+  const camera_before = {
+    target: Array.from(nimCameraTarget()), distance: nimCameraDistance(),
+    azimuth: nimCameraAzimuth(), elevation: nimCameraElevation(),
+  };
+  nimSetCameraTarget(j[0], j[1], j[2]);
+  nimSetCameraAzimuth(Math.atan2(heading[1], heading[0]));
+  nimSetCameraElevation(Math.asin(heading[2] / span));
+  nimSetCameraDistance(span * 6);
+  await wait(500);
+  const canvas = document.getElementById('gl');
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  const centre = Array.from(nimAnchorScreen(jupiter, W, H));
+  const eye = Array.from(nimCameraEye());
+  const target = Array.from(nimCameraTarget());
+  const reach = Math.hypot(...target.map((v, i) => v - eye[i]));
+  const forward = target.map((v, i) => (v - eye[i]) / reach);
+  const depthOf = (s) => at(s).reduce((sum, v, i) => sum + (v - eye[i]) * forward[i], 0);
+  // Disc's radius in pixels, as `mesh.radiusPixelsAt` measures it.
+  const per_pixel = 2 * depthOf(jupiter) * Math.tan((nimCameraFov() * Math.PI / 180) / 2) / H;
+  const radius_px = nimItemRadius(jupiter) / per_pixel;
+  const deeper = [];
+  let sampled = 0;
+  for (let ring = 0.2; ring <= 0.9; ring += 0.175) {
+    for (let step = 0; step < 12; step += 1) {
+      const angle = (step / 12) * 2 * Math.PI;
+      nimUpdateCursor(
+        centre[0] + ring * radius_px * Math.cos(angle),
+        centre[1] + ring * radius_px * Math.sin(angle),
+      );
+      nimUpdateHover(W, H);
+      sampled += 1;
+      const s = nimHoverSlot();
+      if (s >= 0 && depthOf(s) > depthOf(jupiter) + 1e-6) deeper.push(nimItemLabel(s));
+    }
+  }
+  const gl = canvas.getContext('webgl');
+  const px = new Uint8Array(4);
+  const drawn = globalThis.renderFrame;
+  globalThis.renderFrame = function (...a) {
+    const out = drawn.apply(this, a);
+    gl.readPixels(
+      Math.round(centre[0]), canvas.height - Math.round(centre[1]), 1, 1,
+      gl.RGBA, gl.UNSIGNED_BYTE, px,
+    );
+    window.__px_io = Array.from(px);
+    return out;
+  };
+  nimSelectClear();
+  nimSelectToggle(io);
+  await wait(400);
+  const alone = window.__px_io;
+  nimSelectToggle(jupiter);
+  await wait(400);
+  const both = window.__px_io;
+  nimSelectClear();
+  await wait(400);
+  globalThis.renderFrame = drawn;
+  const found = {
+    radius_px, sampled, deeper, alone, both,
+    io_in_front: depthOf(io) < depthOf(jupiter),
+    io_at_centre: Math.hypot(...Array.from(nimAnchorScreen(io, W, H)).slice(0, 2)
+      .map((v, i) => v - centre[i])) < 1,
+  };
+  nimSetCameraTarget(...camera_before.target);
+  nimSetCameraDistance(camera_before.distance);
+  nimSetCameraAzimuth(camera_before.azimuth);
+  nimSetCameraElevation(camera_before.elevation);
+  await wait(200);
+  return found;
+});
+report(
+  'nothing behind a planet\'s disc is hovered through it',
+  occluded.radius_px > 40 && occluded.deeper.length === 0,
+  `${occluded.sampled} samples inside ${occluded.radius_px.toFixed(0)} px disc, ` +
+    `${occluded.deeper.length} hovered deeper than it` +
+    (occluded.deeper.length ? `: ${occluded.deeper.slice(0, 3).join(', ')}` : ''),
+);
+report(
+  'a selected moon in front of a selected planet is drawn in front of it',
+  occluded.io_in_front && occluded.io_at_centre &&
+    occluded.alone.every((v, i) => Math.abs(v - occluded.both[i]) <= 2),
+  `pixel at moon ${JSON.stringify(occluded.alone.slice(0, 3))} alone, ` +
+    `${JSON.stringify(occluded.both.slice(0, 3))} with its planet selected too`,
+);
 await page.keyboard.press('Home');
 await page.waitForTimeout(400);
 

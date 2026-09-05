@@ -4361,6 +4361,93 @@ suite "Picking":
         scene, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, outside
       ) != some(slot_sol)
 
+  test "a point behind a wider disc is not picked through it, and one in front is":
+    # Disc hides what is behind it: star whose centre is nearer cursor than planet's.
+    #   won on distance although planet's disc covered it, and tap meant for planet
+    #   selected star through it. Moon in front of same disc is still picked.
+    let camera = initCamera(
+      target = Position(x: 0, y: 0, z: 0), distance = 2.0, azimuth = 0.0, elevation = 0.5
+    )
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    let scale = camera.drawExtentFor(HEIGHT_PICK)
+    let frame_camera = camera.frame(camera.eye)
+    let planet = Position(x: 0, y: 0, z: 0)
+    check radiusPixelsAt(0.3, planet, scale.scale) > 60.0
+    # Depth read off projection is depth along sight axis, what hiding compares.
+    #   Relative tolerance: matrix is single precision, and radius of hundreds of pixels
+    #   carries its rounding.
+    for probe in [planet, Position(x: 1.5, y: -0.7, z: 0.4), Position(x: -3, y: 2, z: 1)]:
+      let depth = dot(probe - scale.eye, scale.forward)
+      check abs(depthAlongSight(view_projection, probe) - depth) < TOLERANCE_SINGLE*depth
+      let pixels = radiusPixelsAt(0.3, probe, scale.scale)
+      check abs(
+        radiusPixelsAtDepth(0.3, depthAlongSight(view_projection, probe), scale.scale) -
+        pixels
+      ) < TOLERANCE_SINGLE*pixels
+    # Star five units past planet, offset so it projects forty pixels off its centre.
+    #   inside disc; moon half unit before it, offset same way.
+    let behind = planet + 5.0*frame_camera.forward
+    let star = behind + 40.0*worldPerPixelAt(behind, scale.scale)*frame_camera.axis_right
+    let before = planet - 0.5*frame_camera.forward
+    let moon = before + 40.0*worldPerPixelAt(before, scale.scale)*frame_camera.axis_right
+    var hidden = initScene()
+    hidden.addItem(toMultivector(planet), "planet", Ink.Cobalt, radius = 0.3)
+    hidden.addItem(toMultivector(star), "star", Ink.Rose, radius = 0.001)
+    let on_star = projectToScreen(view_projection, WIDTH_PICK, HEIGHT_PICK, star)
+    check abs(on_star.x - CENTRE.x - 40.0) < 1.0
+    let report_hidden = pickAt(
+      hidden, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, on_star
+    )
+    check report_hidden.slot == some(0)
+    check report_hidden.count_rivals == 1 # Hidden star is no rival either.
+    var shown = initScene()
+    shown.addItem(toMultivector(planet), "planet", Ink.Cobalt, radius = 0.3)
+    shown.addItem(toMultivector(moon), "moon", Ink.Rose, radius = 0.02)
+    let on_moon = projectToScreen(view_projection, WIDTH_PICK, HEIGHT_PICK, moon)
+    let report_shown = pickAt(
+      shown, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, on_moon
+    )
+    check report_shown.slot == some(1)
+    check report_shown.count_rivals == 2 # Planet under moon is still rival to it.
+    # Star straight behind moon, on same ray from eye: moon hides it from pick, and.
+    #   being narrower than fingertip, not from crowd.
+    let eye = camera.eye
+    var lunar = initScene()
+    lunar.addItem(toMultivector(moon), "moon", Ink.Rose, radius = 0.02)
+    lunar.addItem(toMultivector(eye + 3.0*(moon - eye)), "star", Ink.Jade, radius = 0.001)
+    check radiusPixelsAt(0.02, moon, scale.scale) < RADIUS_PICK_POINT
+    let report_lunar = pickAt(
+      lunar, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, on_moon
+    )
+    check report_lunar.slot == some(0)
+    check report_lunar.count_rivals == 2
+    # Cursor on disc near its rim, star's centre past rim within pixel reach: planet.
+    #   Star used to win on distance to its own centre. Cursor off disc: star.
+    let near_rim = behind + 130.0*worldPerPixelAt(behind, scale.scale)*frame_camera.axis_right
+    var rim = initScene()
+    rim.addItem(toMultivector(planet), "planet", Ink.Cobalt, radius = 0.3)
+    rim.addItem(toMultivector(near_rim), "star", Ink.Rose, radius = 0.001)
+    let pixels_planet = radiusPixelsAt(0.3, planet, scale.scale)
+    check pixels_planet > 100.0 and pixels_planet < 125.0
+    let on_disc = ScreenPosition(x: CENTRE.x + pixels_planet - 5.0, y: CENTRE.y, depth: 0.0)
+    check pickNearest(
+      rim, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, on_disc
+    ) == some(0)
+    let off_disc = ScreenPosition(x: CENTRE.x + pixels_planet + 5.0, y: CENTRE.y, depth: 0.0)
+    check pickNearest(
+      rim, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, off_disc
+    ) == some(1)
+    # Star past disc's edge is picked as ever: nothing covers it there.
+    let far = behind + 160.0*worldPerPixelAt(behind, scale.scale)*frame_camera.axis_right
+    var clear = initScene()
+    clear.addItem(toMultivector(planet), "planet", Ink.Cobalt, radius = 0.3)
+    clear.addItem(toMultivector(far), "star", Ink.Rose, radius = 0.001)
+    let on_far = projectToScreen(view_projection, WIDTH_PICK, HEIGHT_PICK, far)
+    check on_far.x - CENTRE.x > radiusPixelsAt(0.3, planet, scale.scale)
+    check pickNearest(
+      clear, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, on_far
+    ) == some(1)
+
   test "a pick counts its rivals: two points in reach are two, a point over a plane is one":
     # What touch refuses to drag from; see `interaction.canConstructByTouch`.
     #   Rank decides first, so plane under point is no rival to it.
@@ -4378,14 +4465,19 @@ suite "Picking":
     )
     check report_alone.slot == some(0)
     check report_alone.count_rivals == 1
+    # Second point nearly behind first, their dots overlapping: still two, and one in.
+    #   front is what is picked. Dot narrower than fingertip hides other from pick, not
+    #   from crowd; see pick's hiding rule. Star field's crowds are exactly such dots.
     var crowd = initScene()
     crowd.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
     crowd.addItem(toMultivector(Position(x: 0.05, y: 0, z: 0.05)), "q", Ink.Jade)
     crowd.addItem(groundPlane(), "ground", Ink.Grid)
+    check radiusPixelsAt(RADIUS_ITEM_DEFAULT, Position(x: 0, y: 0, z: 0), scale.scale) <
+      RADIUS_PICK_POINT
     let report_crowd = pickAt(
       crowd, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
     )
-    check report_crowd.slot.isSome
+    check report_crowd.slot == some(1) # Nearer eye, cursor inside its dot.
     check report_crowd.count_rivals == 2
     # Far from both, plane alone answers, as its own single candidate.
     let corner = ScreenPosition(x: CENTRE.x + 300.0, y: CENTRE.y + 200.0, depth: 0.0)

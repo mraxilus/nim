@@ -495,10 +495,21 @@ func radiusDrawnAt*(radius: float, place: Position, scale: DrawScale): float =
   max(radius, 0.5*float(DIAMETER_POINT_LEAST)*worldPerPixelAt(place, scale))
 
 
+func radiusPixelsAtDepth*(radius: float, depth: float, scale: DrawScale): float =
+  ## Measure radius point at `depth` along sight axis is drawn at, in pixels.
+  ##   `radiusDrawnAt` divided back out, for caller already holding depth: pick reads it
+  ##   off projection for every point, and building position's offset from eye per
+  ##   point per walk allocated on JS backend. Same clamp at near plane as
+  ##   `worldPerPixelAt`.
+  let per_pixel =
+    2.0*max(depth, scale.depthNear)*scale.tangentHalfView/float(max(scale.heightPixels, 1))
+  max(radius/per_pixel, 0.5*float(DIAMETER_POINT_LEAST))
+
+
 func radiusPixelsAt*(radius: float, place: Position, scale: DrawScale): float =
   ## Measure radius point is drawn at, in pixels; `radiusDrawnAt` divided back out.
   ##   For marker's ring and pick's disc, both measured on screen.
-  radiusDrawnAt(radius, place, scale)/worldPerPixelAt(place, scale)
+  radiusPixelsAtDepth(radius, dot(place - scale.eye, scale.forward), scale)
 
 
 func radiusHorizonFor*(distance_far: float): float =

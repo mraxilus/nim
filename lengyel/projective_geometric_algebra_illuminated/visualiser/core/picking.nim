@@ -131,6 +131,15 @@ func projectToScreen*(
   )
 
 
+func depthAlongSight*(view_projection: Matrix4; position: Position): float =
+  ## Report how far `position` stands along sight axis, from eye; negative behind it.
+  ##   Projection's own homogeneous weight, what perspective divides by, so same reading
+  ##   `worldPerPixelAt` takes off eye and forward, without building offset per point.
+  ##   Held equal to that dot product by suite case.
+  float(view_projection.at(3, 0))*position.x + float(view_projection.at(3, 1))*position.y +
+    float(view_projection.at(3, 2))*position.z + float(view_projection.at(3, 3))
+
+
 func pixelsFromCursor*(
   view_projection: Matrix4; width, height: int; position: Position; cursor: ScreenPosition
 ): float =
@@ -399,30 +408,67 @@ type PickReport* = object ## Define what one pick found under cursor.
     ## `interaction.beginDrag`.
     ## Winner's rank or better: point beside picked line is rival, since finger may have
     ## meant it; plane under picked point is not, since rank already decides.
+    ## Point hidden behind drawn disc is not either; see `pickAt`.
 
 
-proc pickAt*(
+const HIDERS_MAX = 8
+  ## Bound how many drawn discs under cursor one pick keeps, nearest first found.
+  ##   Discs stacked under one pixel are planet and its moons at most; ninth is dropped.
+
+
+type
+  Hider = object ## Define one drawn disc cursor lies inside, as seen on screen.
+    depth: float ## Along sight axis, from eye.
+    x, y, radius: float ## Centre and radius in pixels.
+
+  Hiders = object ## Define drawn discs under cursor, in fixed storage.
+    ##   Fixed array rather than sequence: pick runs per pointer event, and sequence per
+    ##   event was allocation per event.
+    discs: array[HIDERS_MAX, Hider]
+    count: int
+
+  PickWalk = object ## Define what one walk of scene under cursor found.
+    report: PickReport ## Winner and its rivals, less whatever `hiders` given hid.
+    depth_best: float ## Winner's depth along sight axis; `Inf` where nothing won.
+    hiders: Hiders ## Drawn discs cursor lay inside, gathered as walk went.
+
+
+func widest(hiders: Hiders): float =
+  ## Measure widest disc under cursor, in pixels; 0 where there is none.
+  result = 0.0
+  for i in 0 ..< hiders.count: result = max(result, hiders.discs[i].radius)
+
+
+func coverOf(hiders: Hiders, depth: float, at: ScreenPosition): float =
+  ## Measure widest disc covering point at `depth` projecting to `at`, in pixels; 0 if none.
+  ##   Disc hides point where it is nearer eye and its drawn disc covers point's centre;
+  ##   disc merely under cursor beside point hides nothing of it.
+  ##   For rival counting: point behind fingertip-wide cover is not what finger could
+  ##   have meant; see `pickAt`.
+  result = 0.0
+  for i in 0 ..< hiders.count:
+    let disc = hiders.discs[i]
+    if disc.depth < depth and hypot(at.x - disc.x, at.y - disc.y) <= disc.radius:
+      result = max(result, disc.radius)
+
+
+func add(hiders: var Hiders, hider: Hider) =
+  ## Keep one more disc under cursor, dropping it where storage is full.
+  if hiders.count >= HIDERS_MAX: return
+  hiders.discs[hiders.count] = hider
+  inc hiders.count
+
+
+proc pickWalk(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
-  width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
-): PickReport =
-  ## Find visible item nearest cursor and count its rivals.
-  ##   Prefers points over lines over planes; see `PickReport`.
-  ##   `placed` is frame's own placements, where caller kept them.
-  ##     `tessellate.placeObject` already answers what object is and where, and
-  ##     front-end holding frame's worth of answers (`browser_bridge.PLACEMENTS`) hands them
-  ##     over instead of having walk ask again.
-  ##     Pick then ranks *what was drawn*, off one derivation, and stops running placing
-  ##     side per live slot per pointer event.
-  ##   Pass nothing and every slot is placed here instead: desktop path and every suite
-  ##   case. Partial array is treated as none: cache is frame's whole answer or not one.
-  ##   None where nothing visible falls within its shape's pick radius.
-  ##   Every drawn shape is pickable, horizon or not, ranked point, finite line, horizon
-  ##   line, finite plane, horizon plane.
-  ##     Thin things beat wide ones, and sky comes last: drawn as dome filling every
-  ##     direction, it matches every ray and would swallow scene from any other rank.
-  ##   Horizon plane being pickable means cursor is over *something* almost everywhere.
-  ##     `interaction.beginDrag` refuses to start drag on it for exactly that reason, or
-  ##     orbit and pan stop working moment sky is in scene.
+  width, height: int; cursor: ScreenPosition; placed: openArray[Placed];
+  hiders_known: Hiders; is_points_only: bool
+): PickWalk =
+  ## Walk every visible item once, ranking what stands within reach of cursor.
+  ##   `pickAt`'s one pass; see it for rule. Points `hiders_known` hide are passed over,
+  ##   as winner and as rival; discs under cursor met on way are gathered for caller.
+  ##   `is_points_only` skips every other kind, for second pass whose winner is already
+  ##   known to be point.
   ##   Exceeds 60-line default: three shape branches are irreducibly different geometry,
   ##   each minimal, sharing `eye`/`frame_camera`/`ray`/`scale` setup computed once.
 
@@ -438,16 +484,29 @@ proc pickAt*(
     slot_best = none(int)
     priority_best = high(int)
     distance_best = Inf
+    depth_best = Inf
+    hiders: Hiders
     counts_crowd: array[5, int] # Per rank, within `RADIUS_CROWD_TOUCH`.
 
   template crowd(priority: int) = inc counts_crowd[priority]
 
-  template consider(priority: int, distance: float) =
-    if priority < priority_best or (priority == priority_best and distance < distance_best):
+  # Rank within kind by what is literally under pointer.
+  #   Disc cursor lies inside beats every point it does not, and among those nearest eye
+  #   wins; among rest, nearest cursor in pixels. Reach in pixels is for imprecision
+  #   where nothing is under pointer.
+  var is_under_best = false
+  template consider(priority: int, distance, depth: float, is_under: bool) =
+    let is_better =
+      if priority != priority_best: priority < priority_best
+      elif is_under != is_under_best: is_under
+      elif is_under: depth < depth_best
+      else: distance < distance_best
+    if is_better:
       priority_best = priority
       distance_best = distance
+      depth_best = depth
+      is_under_best = is_under
       slot_best = some(slot)
-
   # Ask once whether caller brought whole frame's placements; cannot change mid-walk.
   let is_placed_held = placed.len >= ITEMS_MAX
   var placed_here: Placed # Filled per slot only where caller brought none.
@@ -477,12 +536,22 @@ proc pickAt*(
       #   measure one from.
       # Widen to disc drawn where that is larger than generous default.
       #   Sun hundred pixels across is picked anywhere on it, not only near middle.
+      # Read depth off projection, and drawn radius off depth.
+      #   Neither builds anything per point; see `depthAlongSight`.
+      let depth = depthAlongSight(view_projection, place.at)
+      if depth <= 1.0e-6: continue # Behind eye; `isInFront`'s test.
       let distance = pixelsFromCursor(view_projection, width, height, place.at, cursor)
-      let radius_pick = max(
-        RADIUS_PICK_POINT, radiusPixelsAt(scene.radiusAt(slot), place.at, scale.scale)
-      )
-      if distance <= radius_pick: consider(0, distance)
-      if distance <= max(RADIUS_CROWD_TOUCH, radius_pick): crowd(0)
+      let radius_drawn = radiusPixelsAtDepth(scene.radiusAt(slot), depth, scale.scale)
+      let radius_pick = max(RADIUS_PICK_POINT, radius_drawn)
+      if distance > max(RADIUS_CROWD_TOUCH, radius_pick): continue
+      # Project only what is within reach, which is few; see `pixelsFromCursor`.
+      let at = projectToScreen(view_projection, width, height, place.at)
+      let is_under = distance <= radius_drawn
+      if is_under: hiders.add(Hider(depth: depth, x: at.x, y: at.y, radius: radius_drawn))
+      # Behind body wider than fingertip: neither winner nor rival.
+      if hiders_known.coverOf(depth, at) >= RADIUS_PICK_POINT: continue
+      if distance <= radius_pick: consider(0, distance, depth, is_under)
+      crowd(0)
 
     of PlacedKind.PointToward:
       # Pick direction point where its star is drawn.
@@ -493,10 +562,16 @@ proc pickAt*(
       ))
       if star.isNone: continue
       let distance = pixelsFromCursor(view_projection, width, height, star.get, cursor)
-      if distance <= RADIUS_PICK_POINT: consider(0, distance)
-      if distance <= RADIUS_CROWD_TOUCH: crowd(0)
+      if distance > RADIUS_CROWD_TOUCH: continue
+      # Star sits at horizon, deeper than any disc, and is dot cursor is never inside.
+      if hiders_known.coverOf(
+        scale.radiusHorizon, projectToScreen(view_projection, width, height, star.get)
+      ) >= RADIUS_PICK_POINT: continue
+      if distance <= RADIUS_PICK_POINT: consider(0, distance, scale.radiusHorizon, false)
+      crowd(0)
 
     of PlacedKind.LineAcross:
+      if is_points_only: continue
       # Test against great circle it is drawn as, sampled as `tessellate.addGreatCircle` does.
       #   Hit then agrees with what is drawn.
       #   Stepped off same fixed table: which plane arms span is placement's answer, ring
@@ -518,10 +593,11 @@ proc pickAt*(
             distance_nearest, distanceToSegment(cursor, previous.get, here)
           )
         previous = if here.isInFront: some(here) else: none(ScreenPosition)
-      if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
+      if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest, Inf, false)
       if distance_nearest <= RADIUS_CROWD_TOUCH: crowd(2)
 
     of PlacedKind.LineThrough:
+      if is_points_only: continue
       # Test both halves `tessellate.addLine` draws, support out to each vanishing point.
       #   Which half is on screen changes as camera orbits.
       var distance_nearest = Inf
@@ -538,10 +614,11 @@ proc pickAt*(
           head = projectToScreen(view_projection, width, height, position_head)
         if not (tail.isInFront and head.isInFront): continue
         distance_nearest = min(distance_nearest, distanceToSegment(cursor, tail, head))
-      if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest)
+      if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest, Inf, false)
       if distance_nearest <= RADIUS_CROWD_TOUCH: crowd(1)
 
     of PlacedKind.PlaneOn:
+      if is_points_only: continue
       # Meet only where disc could reach cursor at all; see `isBeyondDisc`.
       #   Frame guard is kind's to say: `placeObject` reaches `PlaneOn` only with anchor
       #   and frame in hand, anchor carrying override where disc is actually centred.
@@ -551,22 +628,74 @@ proc pickAt*(
       ): continue
       let hit = rayPlaneHit(ray, scale.plane_eye, geometry, place.at, EXTENT_PLANE_F)
       if hit.isSome:
-        consider(3, hit.get)
+        consider(3, hit.get, Inf, false)
         crowd(3)
 
     of PlacedKind.PlaneEverywhere:
+      if is_points_only: continue
       # Match whole sky last of all, with no distance to measure, so anything else wins.
       #   Asked of geometry, not kind: finite plane whose frame algebra cannot give lands
       #   on this kind, and it was never drawn.
       if geometry.isHorizon:
-        consider(4, 0.0)
+        consider(4, 0.0, Inf, false)
         crowd(4)
 
   # Sum crowd of winner's rank and every better one; nothing picked, nothing counted.
   var count_rivals = 0
   if slot_best.isSome:
     for priority in 0 .. priority_best: count_rivals += counts_crowd[priority]
-  PickReport(slot: slot_best, count_rivals: count_rivals)
+  PickWalk(
+    report: PickReport(slot: slot_best, count_rivals: count_rivals),
+    depth_best: depth_best, hiders: hiders,
+  )
+
+
+proc pickAt*(
+  scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
+  width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
+): PickReport =
+  ## Find visible item nearest cursor and count its rivals.
+  ##   Prefers points over lines over planes; see `PickReport`.
+  ##   `placed` is frame's own placements, where caller kept them.
+  ##     `tessellate.placeObject` already answers what object is and where, and
+  ##     front-end holding frame's worth of answers (`browser_bridge.PLACEMENTS`) hands them
+  ##     over instead of having walk ask again.
+  ##     Pick then ranks *what was drawn*, off one derivation, and stops running placing
+  ##     side per live slot per pointer event.
+  ##   Pass nothing and every slot is placed here instead: desktop path and every suite
+  ##   case. Partial array is treated as none: cache is frame's whole answer or not one.
+  ##   None where nothing visible falls within its shape's pick radius.
+  ##   Every drawn shape is pickable, horizon or not, ranked point, finite line, horizon
+  ##   line, finite plane, horizon plane.
+  ##     Thin things beat wide ones, and sky comes last: drawn as dome filling every
+  ##     direction, it matches every ray and would swallow scene from any other rank.
+  ##   Horizon plane being pickable means cursor is over *something* almost everywhere.
+  ##     `interaction.beginDrag` refuses to start drag on it for exactly that reason, or
+  ##     orbit and pan stop working moment sky is in scene.
+  ##   What is under pointer is what is meant. Where cursor lies inside drawn disc of
+  ##   some point, nearest such disc to eye wins over every point cursor is not inside,
+  ##   however near their centres: star beside planet's rim, and star behind its disc,
+  ##   both lost to planet. Pixel reach `RADIUS_PICK_POINT` decides only where cursor is
+  ##   inside nothing. Rival counting follows finger, not eye: point covered by nearer
+  ##   disc narrower than fingertip is still rival, since two dots overlapping are one
+  ##   blob to finger; point covered by fingertip-wide body is not, star behind planet
+  ##   being no ambiguity for finger on planet; see `coverOf`. Point covered by disc
+  ##   cursor is not inside is left alone: it is reachable from beside its cover, and
+  ##   knowing it covered would take every disc, not ones under cursor.
+  ##     Discs under cursor are only known once walk is over, and covered rivals only
+  ##     then, so second walk where fingertip-wide disc lies under cursor, points only:
+  ##     winner is already that disc, and no line or plane needs meeting again. Common
+  ##     case is one walk; candidate list per walk was allocation per pointer event, and
+  ##     star field puts dozens within reach.
+  let first = pickWalk(
+    scene, camera, scale, view_projection, width, height, cursor, placed,
+    hiders_known = Hiders(), is_points_only = false,
+  )
+  if first.hiders.widest < RADIUS_PICK_POINT: return first.report
+  pickWalk(
+    scene, camera, scale, view_projection, width, height, cursor, placed,
+    hiders_known = first.hiders, is_points_only = true,
+  ).report
 
 
 proc pickNearest*(
