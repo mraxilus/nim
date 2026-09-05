@@ -2151,17 +2151,29 @@ comes in along its line to where the object stands under the pointer
 (`picking.positionUnderPointerOn`, shared with the zoom anchor and without its nearness
 filter), the angles never change, and the target lands on the sight line at the object's
 depth — so the object's pixel does not move and the turntable revolves at its depth, as
-after a wheel zoom onto it. **How far in depends on what the reader could see.** A point
-drawn at the floor dot (`DIAMETER_POINT_LEAST`, its true radius under three pixels) is
-only a place, so the camera comes in until its disc spans `FRACTION_BOX_APPROACH` = 1/4 of
-the centred box, a sixth of the frame's height — object plainly seen, neighbours still
-about it (Io picked from 168 units out arrives at 0.47 with Jupiter beside it; the whole
-box put the planet off screen). A point seen at its size, and a line, come in no further
-than the orbit distance, so a reader at working scale picking operands keeps that scale
-(the opening scene's 0.08-radius points from Home are 9 px across, and a click slides in
-without zooming); and the eye never moves further off than the object already stands. A
-plane keeps the centring rule — a surface, every pixel of its disc is on it — and so does
-a group, which has to fit, which holding one pixel cannot promise. **The ease holds the
+after a wheel zoom onto it. **How far in depends on the shape and on what the reader could
+see**, sized on the frame's height by one formula, `camera.depthSpanning(diameter,
+fraction)` = diameter / (2·fraction·tan(fov/2)), the depth at which a world diameter spans
+that fraction of the frame (a disc's projected major axis is its diameter whatever its
+tilt, so it serves the point's ball and the plane's disc alike). A point drawn at the floor dot
+(`DIAMETER_POINT_LEAST`, its true radius under three pixels) is only a place, so the
+camera comes in until its disc spans `FRACTION_HEIGHT_APPROACH_POINT` = 0.05 of the
+frame's height (a sixth of the frame, the first setting, was too close: the object filled
+the view with nothing about it; both fractions were chosen by eye). A point seen at its
+size, and a line, come in no further than the orbit distance, so a reader at working
+scale picking operands keeps that scale (the opening scene's 0.08-radius points from Home
+are 9 px across, and a click slides in without zooming); and neither moves the eye further
+off than the object already stands. A plane is framed **both ways**: its disc's centre
+(`tessellate.anchorFor` with the stored anchor, the centre the disc is drawn about) is
+brought to the depth where the disc's diameter `2·EXTENT_PLANE_F` spans
+`FRACTION_HEIGHT_APPROACH_PLANE` = 0.30, in from afar and back from a plane filling the
+view, while the crossing under the pointer stays the held anchor — moving the eye along
+its line to the crossing by factor *s* puts the centre at depth d_c − d_a + s·d_a, so the
+crossing ends at D − d_c + d_a, and where that is not positive (the centre further behind
+the crossing than D) the pick falls back to `placementFor`. Rejected: keeping the plane on
+the centring rule, which never pulled in, so a plane picked from far was never brought to
+be looked at. A group keeps the centring rule, since it has to fit, which holding one pixel
+cannot promise. **The ease holds the
 pixel too**: `CameraTween.anchor_held` switches `advance` from `toward` to
 `towardHoldingAnchor`, where the eye's depth to the anchor moves geometrically along the
 eye–anchor line; `toward`'s linear target and geometric distance take the eye off that
@@ -2174,11 +2186,13 @@ after a wheel out to 168 a pick of a moon moved the target onto it and left the 
 at 168. `aimAt`'s `is_renewed` re-arms the ease for a pointer pick whatever the tween
 holds. Verified by suite (the pixel stays within 0.01 px through five steps of the ease
 and the arrival distance equals the fit; a near point and a line keep the orbit distance;
-a plane and a pair hold no anchor; a re-pick after `abandon` and a dolly re-arms) and by
-driven check on the browser (from 45 units a right-click brings the eye to 1.21 with the
-anchor drifting 0.00 px in flight and settled and the target at the object's depth; a
-second pick after wheeling out to 68 comes in to 1.21 again). Both front-ends rendered and
-looked at.
+a pair holds no anchor; a re-pick after `abandon` and a dolly re-arms) and by driven check
+on the browser (from 45 units a right-click brings the eye to 3.86 with the anchor
+drifting 0.00 px in flight and settled and the target at the object's depth; a second pick
+after wheeling out to 69 comes in to 3.86 again; a right-click on the opening scene's
+ground plane from Home settles its centre at 64.38, exactly the depth wanted for 0.30).
+The suite pins the plane's arrival from 12 units and from 1, the crossing's pixel held
+through both. Both front-ends rendered and looked at.
 
 *Checked.* Verified on the shipped page, seven selections × nine starting orientations: worst
 picked point outside the box 0.0 px (323.9 when watching one object); total pan over 63 trials
