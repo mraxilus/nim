@@ -763,6 +763,27 @@ object can occlude is not a marker. A 3D-modelling-style outline (oversized silh
 depth-write off, its own shader and mesh set) was built and deleted; do not reintroduce it
 without being asked.
 
+**A selected object wears its name above its marker.** The label is filled in the
+object's own ink and outlined in the marker's stroke, so it reads as part of the marker
+family; hover and focus wear none, as they carry no pulse. Where it sits is one more
+decision `marker.nim` makes (`Marker.has_label`, `Marker.label_at`): centred `GAP_MARKER`
+plus half `HEIGHT_MARKER_LABEL` (14 px) above the outline's top at the object's own place —
+a ring's top (so a held marker's swell lifts the label with it), the upper rail where it
+passes the line's support, a loop's or bands' highest projected point — and, for the sky's
+frame, just inside the top edge, since above a frame that is the viewport is off screen.
+Placed with the marker rather than by each front-end so the two agree by construction;
+each centres its own text on the point and keeps its own face (the page's sans at the shared
+height, set by `glue.js` from `nimOverlayMetrics`; Dear ImGui's loaded font on the desktop).
+The browser stages one SVG `<text>` per selected slot with `paint-order: stroke`, the ink
+colour read into a table once at start-up (`COLOUR_INK_CSS`, since `nimInkColor` builds a
+sequence per call); the desktop has no stroked text, so `guiOverlayLabel` draws the text at
+the eight one-pixel offsets in the stroke colour beneath the fill, on the background list
+the markers use. The label position crosses the bridge through `nimSelectionLabelAt` over a
+fixed buffer, reading the marker `nimSelectionMarker` just shaped. Verified: the suite pins
+every kind's placement, the browser pin finds two labels for two selected objects in the
+right ink and stroke above the anchor and none once cleared, and both front-ends were
+rendered and looked at (storyboard step `02_join_plane` on the desktop).
+
 **A plane's loop lies on the plane**, traced from the plane's frame about the same anchor
 `addPlane` centres its disc on, so it is concentric with the drawn disc; its clearance is a
 world distance sized through `worldPerPixelAt` at the disc's own depth, so the gap reads as
