@@ -758,19 +758,27 @@ without being asked.
 object's own ink and outlined in the marker's stroke, so it reads as part of the marker
 family; hover and focus wear none, as they carry no pulse. Where it sits is one more
 decision `marker.nim` makes (`Marker.has_label`, `Marker.label_at`): centred `GAP_MARKER`
-plus half `HEIGHT_MARKER_LABEL` (13 px) above the outline's top at the object's own place —
+plus half `HEIGHT_MARKER_LABEL` (14 px) above the outline's top at the object's own place —
 a ring's top (so a held marker's swell lifts the label with it), the upper rail where it
 passes the line's support, a loop's or bands' highest projected point — and, for the sky's
 frame, just inside the top edge, since above a frame that is the viewport is off screen.
 Placed with the marker rather than by each front-end so the two agree by construction;
 each centres its own text on the point and keeps its own face (the page's sans at the shared
 height, set by `glue.js` from `nimOverlayMetrics`; Dear ImGui's loaded font on the desktop).
-The browser stages one SVG `<text>` per selected slot with `paint-order: stroke` and a
-1.5 px halo (`WIDTH_LABEL_STROKE`, about a tenth of the 13 px semibold face, map-label
-practice — 3 px at 14 px swamped the counters), the ink colour read into a table once at
-start-up (`COLOUR_INK_CSS`, since `nimInkColor` builds a sequence per call); the desktop
-has no stroked text, so `guiOverlayLabel` draws the text at the eight one-pixel offsets in
-the stroke colour beneath the fill, on the background list the markers use. The label
+**The halo is the backdrop's colour, not the marker's white.** Cartographic label
+practice (Peterson, *Cartographer's Toolkit*; Dawson, *About label halos*; Esri, *Polishing
+your halo*) is that a halo blends with the background so it knocks the surroundings out of
+the letters, while a contrasting halo dominates them — which is what the white one did,
+at 3 px and again at 1.5 px. Glanceable on-screen text reads better bigger, regular width,
+never light (NN/g, *Typography for Glanceable Reading*; Microsoft's mixed-reality guidance
+puts the comfortable floor at 14 px). So: `WIDTH_MARKER_LABEL_HALO` = 2 px of `Ink.Backdrop`
+at `ALPHA_MARKER_LABEL_HALO` = 0.85, a 14 px face at weight 500 with 0.02 em of tracking,
+the fill still the object's ink; the marker keeps its white for itself. The browser stages
+one SVG `<text>` per selected slot with `paint-order: stroke` and reads the ink colours
+into a table once at start-up (`COLOUR_INK_CSS`, since `nimInkColor` builds a sequence per
+call); the desktop has no stroked text, so `guiOverlayLabel` draws the text at the eight
+one-pixel offsets in the halo colour beneath the fill, on the background list the markers
+use. The label
 position crosses the bridge through `nimSelectionLabelAt` over a
 fixed buffer, reading the marker `nimSelectionMarker` just shaped. Verified: the suite pins
 every kind's placement, the browser pin finds two labels for two selected objects in the
@@ -926,10 +934,17 @@ draws as, stepped off the same table), finite plane, horizon plane (matches ever
 last). A horizon point was silently unpickable while the extent was built fieldwise with its
 multivector twins zero; the extent goes through `algebraFilled`, the one derivation point.
 
-**The sky is a click and hold target, never a drag handle.** With a horizon plane visible
-the cursor is over *something* almost everywhere, and a press on empty space becomes an
-orbit precisely because nothing was hovered. `beginDrag` refuses the sky and `destinationOf`
-refuses it; `interaction.is_hover_backdrop` carries the answer from `updateHover`. Clicking
+**The sky is a click and hold target, never a drag handle, and so is a plane that fills
+the view.** With a horizon plane visible the cursor is over *something* almost everywhere,
+and a press on empty space becomes an orbit precisely because nothing was hovered. A
+finite plane whose disc spans the frame's longer side (`picking.coversView`, the disc's
+`EXTENT_PLANE_F` radius in pixels at its own depth) leaves no empty glass at all, so a
+press on it starting a construction drag left the view unmovable; `picking.isBackdropUnder`
+folds both cases into one answer. `beginDrag` refuses the backdrop and `destinationOf`
+refuses it; `interaction.is_hover_backdrop` carries the answer from `updateHover`.
+Verified: the suite hovers the ground from half a unit (backdrop, drag refused) and from
+forty (drag starts); the driven check drops the camera onto the ground plane and a
+left-drag orbits without building. Clicking
 empty space then selects the sky rather than clearing; a tap still treats it as empty space,
 since tapping empty space is a finger's only way to dismiss a selection, and touch reaches
 the sky by long-press. The selection menu follows the middle of the view for it.
@@ -978,17 +993,23 @@ Interaction Model
 brings the floating selection menu (right yes, left and middle no); `armingOf` says whether
 a drag opens the choice wheel. Both render paths and `help.nim` read them.
 
-**The selection menu opens beside the pointer and stays with the object.** A click or tap
-that reveals the menu puts its top-left corner `INSET_MENU_POINTER` = 8 px from the pointer,
-as every desktop context menu does, and the menu remembers its **offset from the object's
-anchor** (`offset_menu_selection` in `glue.js`; `corner_menu_pointer` turned into
-`offset_menu_selection` on first layout in `panel.nim`) so orbiting or the pick's own
-recentring carries it with the object rather than snapping it back to the object's centre —
-which the per-frame follow used to do one frame after a click had placed it. A menu opened
-with no pointer (objects list, keyboard, a hold that matured) sits above the anchor as
-before, pinned by its bottom middle on the desktop and lifted `LIFT_MENU_ANCHOR` = 60 px on
-the browser. Verified by driven check: a right-click 15 px off a point's anchor opens the
-menu within the inset of the click, and a pan moves menu and anchor by the same delta.
+**The selection menu waits for the camera to settle, then opens beside the pointer.**
+Picking eases the view so the picked object glides to the middle (`framing.offerAim`), and
+a menu opened on the click glided away from the pointer with it — confusing, since the
+pointer had not moved. A click or tap that reveals the menu now sets a pending reveal
+(`is_reveal_menu_pending` in `glue.js`, `revealSelectionMenuLater` in `panel.nim`); the
+frame loop opens it once `camera.isCarrying` is false — the ease is armed by the frame after
+the pick, so the first frame always waits — with its top-left corner `INSET_MENU_POINTER` =
+8 px from the pointer **where the pointer then is**. From then on the menu remembers its
+offset from the object's anchor (`offset_menu_selection`; `corner_menu_pointer` turned into
+it on the desktop's first layout) so orbiting carries it with the object rather than
+snapping it back to the centre, which the per-frame follow used to do. A menu opened with
+no pointer (objects list, keyboard, a matured hold) sits above the anchor as before, pinned
+by its bottom middle on the desktop and lifted `LIFT_MENU_ANCHOR` = 60 px on the browser.
+Verified by driven check: a right-click 15 px off a point's anchor leaves the menu hidden
+while the camera is carrying, opens it within the inset of the unmoved pointer once
+settled, and a pan then moves menu and anchor by the same delta; the suite pins
+`isCarrying` from offer to arrival.
 
 | Gesture | Does |
 |---|---|
