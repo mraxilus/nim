@@ -206,6 +206,24 @@ func strain*(rig: Rig; j: Joints): tuple[most: float, dof: Dof] =
       result.dof = dof
   result.most = max(0.0, 1.0 - least)
 
+func room*(rig: Rig; j: Joints): float =
+  ## How far the nearest joint is from *either* end of its range, in that
+  ## end's ease: the freedom the arm has to move any way at all.
+  ##   Unlike `margin`, a stop with no ease counts as an end here -- a
+  ##     straight elbow cannot straighten further, however painless it is.
+  ##     The wrist's range is a cone, so its nought is its middle, not an
+  ##     end, and only the cone's edge counts.
+  result = Inf
+  for dof in Dof:
+    let
+      r = rig.range[dof]
+      value = reading(j, dof)
+      unitLo = if r.easeLo > 0.0: r.easeLo else: r.easeHi
+      unitHi = if r.easeHi > 0.0: r.easeHi else: r.easeLo
+    result = min(result, (r.hi - value) / unitHi)
+    if dof != Dof.Wrist:
+      result = min(result, (value - r.lo) / unitLo)
+
 func comfort*(rig: Rig; j: Joints): float =
   ## The smooth cost of a pose: how far every joint sits from its rest,
   ## squared and summed, with the arm's lift counted too.

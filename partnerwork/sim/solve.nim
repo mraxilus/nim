@@ -11,8 +11,10 @@
 ##     and where it fails the largest failure is named -- the joint, or the
 ##     body part and whose.  Among the poses that hold, the one returned is
 ##     the one with the least comfort cost: the joints nearest their rest,
-##     the arm lowest, the hands lowest in their band.  The cost is smooth,
-##     so neighbouring turns get neighbouring poses.
+##     the arm lowest, the hands between the two bodies on the line between
+##     their centrelines, and at whatever height within their band leaves
+##     the joints least constrained.  The cost is smooth, so neighbouring
+##     turns get neighbouring poses.
 ##   The search is a pattern search: try each number a step either way, keep
 ##     the best improvement, halve the steps when nothing improves.  Seeded
 ##     from a grid over the grip with each arm laid out independently, since
@@ -104,8 +106,9 @@ const
                    ## flesh gives.  Without it a search converging onto a
                    ## contact from outside never arrives.
   CENTRING = [2.0, 2.0, 0.5] ## Per band, the weight of the grip's distance
-    ## from between the shoulders.  Light over the crown: a hand held over a
-    ## head is held over the turning partner's head, not between the two.
+    ## from the point between the two bodies' axes.  Light over the crown: a
+    ## hand held over a head is held over the turning partner's head, not
+    ## between the two.
   EXCUSE = 0.15  ## Two arms holding one grip may converge within this of it.
   SLACK = 0.05   ## The unit a reach or band overshoot is counted in, metres.
   DIRS14 = block:
@@ -244,14 +247,16 @@ func fitLink(s: State; sc: Scene; i: int; p: Params; v: var Verdict) =
     worse(v, (band.lo - p.g.z) / SLACK, Reason.Band, i, 0)
   elif p.g.z > band.hi:
     worse(v, (p.g.z - band.hi) / SLACK, Reason.Band, i, 0)
-  let lift = (p.g.z - band.lo) / (band.hi - band.lo)
-  costs += lift * lift
-  # The grip between the two shoulders: a couple holds hands between them,
-  # not wherever both arms happen to hang most easily.  Over the crown and
-  # set up for a turn, over the turning partner's head instead.
+  # Within the band the hands take whatever height constrains the joints
+  # least: the band is a bound, not a preference, and the comfort cost --
+  # every joint from its rest, the arm's lift, the centring -- decides.
+  # The grip between the two bodies, on the line between their centrelines:
+  # a couple holds hands between them, not wherever both arms happen to hang
+  # most easily.  Over the crown and set up for a turn, over the turning
+  # partner's head instead.
   let
-    a = v.fits[i].arms[0].s
-    b = v.fits[i].arms[1].s
+    a = s.stance[Body.One].centre
+    b = s.stance[Body.Two].centre
   var
     mid: Vec = ((a.x + b.x) / 2.0, (a.y + b.y) / 2.0, p.g.z)
     weight = CENTRING[ord(s.band)]

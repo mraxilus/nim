@@ -33,9 +33,11 @@ body, as arms do.
 three freedoms — which way the hand points off the wrist, and where the elbow
 sits on the circle a two-link chain leaves it — and the sim searches them,
 and the grip, for the most comfortable pose that holds: every joint nearest
-its rest, the arms lowest, the hands lowest in their band, the grip between
-the shoulders. The search is a pattern search from a grid of seeds, and it is
-deterministic: the same question gets the same answer.
+its rest, the arms lowest, the grip between the two bodies on the line
+between their centrelines, and at whatever height within its band leaves
+the joints least constrained — the band is a bound, not a preference. The
+search is a pattern search from a grid of seeds, and it is deterministic: the
+same question gets the same answer.
 
 **Turning is a path, not a pose.** From a rest that holds, a body is turned a
 fiftieth of a turn at a time and the arms are carried on by small moves —
@@ -117,8 +119,10 @@ solve.nim    a pose evaluated, seeded, refined, settled; routing
 sweep.nim    turning, moment by moment, until something gives
 read.nim     what a pose says about itself, still in body words
 draw.nim     a state as two pictures: from above, and from the side
-page.nim     the browser page, compiled to JS; its turn sliders are
-             carried the same way, and stop where the arms do
+page.nim     the browser page, compiled to JS: a hold, a level, and a
+             quarter turn at a time by buttons, on axis or in orbit; each
+             quarter is carried the same way and stops where the arms do,
+             and the couple stand wherever the joints have the most room
 laws.nim     what the model is held to, all of it about bodies and arms
 verdicts.nim the sim run as an instrument against the ontology's sheet
 verdicts.md  what it said, translated once and generated, not edited

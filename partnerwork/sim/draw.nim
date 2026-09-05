@@ -62,32 +62,39 @@ func planArm(rig: Rig; p: ArmPose; ink: string; dashed: bool): string =
   result.add &"<rect x=\"{n(p.s.x * PX - 4)}\" y=\"{n(-p.s.y * PX - 4)}\" width=\"8\" height=\"8\" fill=\"{ink}\"/>"
 
 
-func sideBody(rig: Rig; st: Stance; ink: string): string =
-  ## One body from the side, looking along x: the height of each part and
-  ## how deep it shows at its facing.
+func sideBody(rig: Rig; st: Stance; mid: tuple[x, y: float]; dir: Vec;
+              ink: string): string =
+  ## One body from the side, looking across the line between the two axes:
+  ## the height of each part and how deep it shows at its facing.
   let
-    c = cos(st.facing)
-    s = sin(st.facing)
+    right: Vec = (sin(st.facing), -cos(st.facing), 0.0)
+    fore: Vec = (cos(st.facing), sin(st.facing), 0.0)
+    along = (st.centre.x - mid.x) * dir.x + (st.centre.y - mid.y) * dir.y
+    dr = dir.x * right.x + dir.y * right.y
+    df = dir.x * fore.x + dir.y * fore.y
   for part in Part:
     let
       a = halfBreadth(rig, part)
       b = halfDepth(rig, part)
-      half = sqrt((a * c) * (a * c) + (b * s) * (b * s))
-      y0 = -(st.centre.y + half)
+      half = sqrt((a * dr) * (a * dr) + (b * df) * (b * df))
+      y0 = -(along + half)
       z0 = -rig.top[part]
       h = rig.top[part] - bottom(rig, part)
     result.add &"<rect x=\"{px(y0)}\" y=\"{px(z0)}\" width=\"{px(2.0 * half)}\" height=\"{px(h)}\" fill=\"{ink}\" fill-opacity=\"0.10\" stroke=\"{ink}\" stroke-width=\"1\"/>"
 
 
-func sideArm(rig: Rig; p: ArmPose; ink: string): string =
+func sideArm(rig: Rig; p: ArmPose; mid: tuple[x, y: float]; dir: Vec;
+             ink: string): string =
+  func across(q: Vec): string =
+    px(-((q.x - mid.x) * dir.x + (q.y - mid.y) * dir.y))
   let pts = [p.s, p.e, p.w, p.g]
   var d = ""
   for i, q in pts:
-    d.add (if i == 0: "M" else: "L") & px(-q.y) & " " & px(-q.z) & " "
+    d.add (if i == 0: "M" else: "L") & across(q) & " " & px(-q.z) & " "
   result.add &"<path d=\"{d}\" fill=\"none\" stroke=\"{ink}\" stroke-width=\"{px(2.0 * rig.limb)}\" stroke-opacity=\"0.55\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
   result.add &"<path d=\"{d}\" fill=\"none\" stroke=\"{ink}\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>"
   for q in [p.e, p.w]:
-    result.add &"<circle cx=\"{px(-q.y)}\" cy=\"{px(-q.z)}\" r=\"3\" fill=\"var(--page, #fff)\" stroke=\"{ink}\" stroke-width=\"1.5\"/>"
+    result.add &"<circle cx=\"{across(q)}\" cy=\"{px(-q.z)}\" r=\"3\" fill=\"var(--page, #fff)\" stroke=\"{ink}\" stroke-width=\"1.5\"/>"
 
 
 func plan*(s: State; v: Verdict; half = 0.80): string =
@@ -106,12 +113,20 @@ func plan*(s: State; v: Verdict; half = 0.80): string =
 
 
 func elevation*(s: State; v: Verdict; half = 0.80): string =
-  ## The couple from the side, looking along x, floor to over the heads.
-  let my = (s.stance[Body.One].centre.y + s.stance[Body.Two].centre.y) / 2.0
-  result.add &"<svg viewBox=\"{px(-my - half)} {px(-2.1)} {px(2.0 * half)} {px(1.4)}\" width=\"100%\" style=\"max-height: 16rem\" xmlns=\"http://www.w3.org/2000/svg\">"
+  ## The couple from the side, looking across the line between their two
+  ## axes, floor to over the heads: whichever way they have turned or
+  ## walked, the side view keeps them side by side.
+  let
+    c1 = s.stance[Body.One].centre
+    c2 = s.stance[Body.Two].centre
+    mid = ((c1.x + c2.x) / 2.0, (c1.y + c2.y) / 2.0)
+    span = sqrt((c2.x - c1.x) * (c2.x - c1.x) + (c2.y - c1.y) * (c2.y - c1.y))
+    dir: Vec = if span < 1e-9: (0.0, 1.0, 0.0)
+               else: ((c2.x - c1.x) / span, (c2.y - c1.y) / span, 0.0)
+  result.add &"<svg viewBox=\"{px(-half)} {px(-2.1)} {px(2.0 * half)} {px(1.4)}\" width=\"100%\" style=\"max-height: 16rem\" xmlns=\"http://www.w3.org/2000/svg\">"
   for who in Body:
-    result.add sideBody(s.rig, s.stance[who], (if who == Body.One: "var(--ink, #222)" else: "var(--dim, #777)"))
+    result.add sideBody(s.rig, s.stance[who], mid, dir, (if who == Body.One: "var(--ink, #222)" else: "var(--dim, #777)"))
   for i in 0 ..< v.n:
     for k in 0 .. 1:
-      result.add sideArm(s.rig, v.fits[i].arms[k], INKS[i mod INKS.len])
+      result.add sideArm(s.rig, v.fits[i].arms[k], mid, dir, INKS[i mod INKS.len])
   result.add "</svg>"
