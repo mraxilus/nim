@@ -180,6 +180,8 @@ type
     index_arity*: cint ## Arity filter operation picker offers.
       ## 0 unary, 1 binary, matching `Arity`'s ordinals.
       ## Filters list rather than greying second operand.
+    is_menu_reveal_pending*: bool ## Whether pointer asked for menu that waits on camera.
+      ## Shown beside pointer once `tween_camera` has settled; see `revealSelectionMenuLater`.
     is_menu_selection_shown*: bool ## Whether floating selection menu is on screen.
       ## See `layoutSelectionMenu`.
       ## Not derived from selection being non-empty.
@@ -241,30 +243,40 @@ func isPending*(row: ItemRow): bool = row.slot.isNone
   ## Report whether row is composing object that does not exist yet.
 
 
-func showSelectionMenu*(
-  panel: var Panel, pointer: Option[ScreenPosition] = none(ScreenPosition)
-) =
-  ## Bring floating selection menu up over whatever is picked, closed on picker.
-  ##   Every gesture that picks calls this; every gesture that builds calls
-  ##   `hideSelectionMenu`.
-  ##   `pointer` is where click that revealed it landed: menu then opens beside pointer,
-  ##   as context menu does, and keeps that offset from object as camera moves. None from
-  ##   objects list, which has no pointer over scene; menu sits above object instead.
+func showSelectionMenu*(panel: var Panel) =
+  ## Bring floating selection menu up above whatever is picked, closed on picker.
+  ##   For pick with no pointer over scene: objects list, keyboard. Every gesture that
+  ##   builds calls `hideSelectionMenu`.
   panel.is_menu_selection_shown = true
   panel.is_menu_selection_picking = false
+  panel.is_menu_reveal_pending = false
   panel.offset_menu_selection = none(array[2, cfloat])
-  panel.corner_menu_pointer =
-    if pointer.isSome:
-      some([
-        cfloat(pointer.get.x) + INSET_MENU_POINTER, cfloat(pointer.get.y) + INSET_MENU_POINTER,
-      ])
-    else: none(array[2, cfloat])
+  panel.corner_menu_pointer = none(array[2, cfloat])
+
+
+func showSelectionMenuAt*(panel: var Panel, pointer: ScreenPosition) =
+  ## Bring floating selection menu up beside `pointer`, as context menu does.
+  ##   Menu then keeps its offset from object as camera moves; see `layoutSelectionMenu`.
+  panel.showSelectionMenu()
+  panel.corner_menu_pointer = some([
+    cfloat(pointer.x) + INSET_MENU_POINTER, cfloat(pointer.y) + INSET_MENU_POINTER,
+  ])
+
+
+func revealSelectionMenuLater*(panel: var Panel) =
+  ## Ask for menu beside pointer once camera has settled on what was picked.
+  ##   Picking eases view to object, and menu opened at once glided away from pointer with
+  ##   it. Frame loop opens it through `showSelectionMenuAt` when `tween_camera` arrives.
+  panel.is_menu_selection_shown = false
+  panel.is_menu_selection_picking = false
+  panel.is_menu_reveal_pending = true
 
 
 func hideSelectionMenu*(panel: var Panel) =
   ## Put floating selection menu away, leaving selection alone.
   panel.is_menu_selection_shown = false
   panel.is_menu_selection_picking = false
+  panel.is_menu_reveal_pending = false
   panel.corner_menu_pointer = none(array[2, cfloat])
   panel.offset_menu_selection = none(array[2, cfloat])
 

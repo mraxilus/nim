@@ -681,12 +681,13 @@ report(
     `two -> ${centred_two.target.map((v) => v.toFixed(2))} ` +
     `(middle ${middle_two.map((v) => v.toFixed(2))})`,
 );
-// **Selection menu opens beside pointer and stays with object.** Right-click 15 px
-// off first pickable point's anchor, inside its pick reach: menu's corner lands within
-// inset of click, not at anchor; pan then moves menu and anchor by same delta, menu
-// keeping its offset.
+// **Selection menu waits for camera to settle, then opens beside pointer.** Picking
+// eases view so picked object glides to middle; menu opened at once glided away with it.
+// Right-click 15 px off first pickable point's anchor, inside its pick reach: menu stays
+// hidden while `nimCameraIsCarrying`, then opens with its corner within inset of pointer
+// where pointer still is, and pan afterwards moves menu and anchor by same delta.
 // Glass is cleared first, since drawer standing open would take click; camera is
-// settled, since framing tween still running would carry anchor away between reads.
+// settled, since earlier framing still running would carry anchor away between reads.
 await clearTheGlass();
 await page.keyboard.press('Home');
 await settleCamera();
@@ -695,39 +696,56 @@ const menu_placed = await page.evaluate((slot) => {
   const at = Array.from(nimAnchorScreen(slot, rect.width, rect.height));
   return {
     slot, x: rect.left + at[0] + 15, y: rect.top + at[1] + 10, in_front: at[2] > 0.5,
+    anchor: [rect.left + at[0], rect.top + at[1]],
   };
 }, points_pickable[0]);
 await page.mouse.move(menu_placed.x, menu_placed.y);
 await page.waitForTimeout(100);
 await page.mouse.click(menu_placed.x, menu_placed.y, { button: 'right' });
-await page.waitForTimeout(1500); // Pick's own recentring settles; menu rides it.
+await page.waitForTimeout(120); // Two frames in: ease armed, menu must still be away.
 const menuAndAnchor = () => page.evaluate((slot) => {
   const menu = document.getElementById('selection-menu').getBoundingClientRect();
   const rect = document.getElementById('gl').getBoundingClientRect();
   const at = Array.from(nimAnchorScreen(slot, rect.width, rect.height));
   return {
     shown: document.getElementById('selection-menu').classList.contains('show'),
+    carrying: nimCameraIsCarrying(),
     menu: [menu.left, menu.top], anchor: [rect.left + at[0], rect.top + at[1]],
   };
 }, menu_placed.slot);
+const in_flight = await menuAndAnchor();
+await settleCamera();
+await page.waitForTimeout(200);
 const opened = await menuAndAnchor();
 await page.evaluate(() => nimCameraPan(0.4, 0.2));
 await page.waitForTimeout(600);
 const panned = await menuAndAnchor();
+const corner_from_pointer = [opened.menu[0] - menu_placed.x, opened.menu[1] - menu_placed.y];
 const offset_opened = [opened.menu[0] - opened.anchor[0], opened.menu[1] - opened.anchor[1]];
 const offset_panned = [panned.menu[0] - panned.anchor[0], panned.menu[1] - panned.anchor[1]];
+const moved_by_pick = Math.hypot(
+  opened.anchor[0] - menu_placed.anchor[0], opened.anchor[1] - menu_placed.anchor[1],
+);
 report(
-  'the selection menu opens beside the pointer and keeps its offset from the object',
-  menu_placed.in_front && opened.shown &&
-    Math.abs(offset_opened[0] - 23) < 2 && Math.abs(offset_opened[1] - 18) < 2 &&
-    Math.abs(offset_panned[0] - offset_opened[0]) < 2 &&
+  'the selection menu waits for the camera to settle, then opens beside the pointer',
+  menu_placed.in_front && in_flight.carrying && !in_flight.shown && opened.shown &&
+    Math.abs(corner_from_pointer[0] - 8) < 2 && Math.abs(corner_from_pointer[1] - 8) < 2 &&
+    moved_by_pick > 20,
+  `in flight: ${in_flight.carrying ? 'carrying' : 'still'}, menu ` +
+    `${in_flight.shown ? 'shown' : 'hidden'}; settled: menu ` +
+    `${opened.shown ? 'shown' : 'hidden'}, corner ` +
+    `${corner_from_pointer.map((v) => v.toFixed(0))} ` +
+    `px from pointer (inset 8), pick moved anchor ${moved_by_pick.toFixed(0)} px`,
+);
+report(
+  'and keeps its offset from the object as the view pans',
+  Math.abs(offset_panned[0] - offset_opened[0]) < 2 &&
     Math.abs(offset_panned[1] - offset_opened[1]) < 2 &&
     Math.hypot(panned.anchor[0] - opened.anchor[0], panned.anchor[1] - opened.anchor[1]) > 50,
-  `menu ${opened.shown ? 'shown' : 'hidden'}, corner ` +
-    `${offset_opened.map((v) => v.toFixed(0))} px from anchor at open ` +
-    `(click was 15,10 off it, inset 8), ${offset_panned.map((v) => v.toFixed(0))} after pan ` +
-    `moved anchor ${Math.hypot(panned.anchor[0] - opened.anchor[0],
-      panned.anchor[1] - opened.anchor[1]).toFixed(0)} px`,
+  `offset ${offset_opened.map((v) => v.toFixed(0))} at open, ` +
+    `${offset_panned.map((v) => v.toFixed(0))} after pan moved anchor ` +
+    `${Math.hypot(panned.anchor[0] - opened.anchor[0], panned.anchor[1] - opened.anchor[1])
+      .toFixed(0)} px`,
 );
 await page.evaluate(() => clearSelection());
 

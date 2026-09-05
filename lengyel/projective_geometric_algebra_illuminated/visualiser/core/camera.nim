@@ -873,6 +873,12 @@ func advance*(
   if now - tween.started >= tween.duration: tween.is_arrived = true
 
 
+func isCarrying*(tween: CameraTween): bool = tween.goal.isSome and not tween.is_arrived
+  ## Report whether ease is mid-flight, camera still on its way to destination.
+  ##   For whoever must wait for view to settle before placing something against it:
+  ##   selection menu opened beside pointer, which object glides away from otherwise.
+
+
 func settle*(tween: var CameraTween, camera: var Camera) =
   ## Put camera on destination at once.
   ##   For caller that must not show half-finished pan, such as storyboard frame about to

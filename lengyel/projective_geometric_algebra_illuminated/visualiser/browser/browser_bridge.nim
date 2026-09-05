@@ -1056,6 +1056,11 @@ proc nimCameraTarget(): FlatBuffer {.exportc.} =
   FLAT_TARGET.fill3(cfloat(CAMERA.target.x), cfloat(CAMERA.target.y), cfloat(CAMERA.target.z))
 
 
+proc nimCameraIsCarrying(): bool {.exportc.} = TWEEN_CAMERA.isCarrying
+  ## Report whether camera is still easing toward what was picked; see `camera.isCarrying`.
+  ##   Glue holds selection menu back until this is false, then opens it beside pointer.
+
+
 proc nimCameraEye(): FlatBuffer {.exportc.} =
   ## Report where eye stands, as `[x, y, z]` view over `FLAT_EYE`.
   ##   Driven checks read sight line off eye and target, to tell zoom along it from

@@ -776,6 +776,10 @@ proc renderFrame(
 
   let scale = camera.drawExtentFor(int(height))
   offerCameraAim(panel, scene, camera, scale, now, int(width), int(height))
+  # Open menu pointer asked for once view has settled, beside pointer where it now is.
+  #   Ease armed above carries picked object to middle; menu opened at once went with it.
+  if panel.is_menu_reveal_pending and not panel.tween_camera.isCarrying:
+    panel.showSelectionMenuAt(interaction.cursor)
   # Run hover and drag reading it before meshes are assembled.
   #   Drag's preview is then this frame's.
   #   Transform they pick against needs only camera, already advanced.
@@ -1002,12 +1006,12 @@ proc handleEvent(
         #   back; see `revealsWithoutPicking`.
         if revealsMenuFor(event.button.button) and not is_shifted and
             revealsWithoutPicking(panel.selection.len > 0, panel.is_menu_selection_shown):
-          panel.showSelectionMenu(some(interaction.cursor))
+          panel.revealSelectionMenuLater()
         else:
           if is_shifted: panel.selection.toggle(outcome.index_clicked.get)
           else: panel.selection.selectOnly(outcome.index_clicked.get)
           if revealsMenuFor(event.button.button):
-            panel.showSelectionMenu(some(interaction.cursor))
+            panel.revealSelectionMenuLater()
           else: panel.hideSelectionMenu()
       elif outcome.index_created.isSome:
         panel.selection.selectOnly(outcome.index_created.get)
@@ -1030,12 +1034,12 @@ proc handleEvent(
         let slot = interaction.index_hover.get
         if revealsMenuFor(event.button.button) and not is_shifted and
             revealsWithoutPicking(panel.selection.len > 0, panel.is_menu_selection_shown):
-          panel.showSelectionMenu(some(interaction.cursor))
+          panel.revealSelectionMenuLater()
         else:
           if is_shifted: panel.selection.toggle(slot)
           else: panel.selection.selectOnly(slot)
           if revealsMenuFor(event.button.button):
-            panel.showSelectionMenu(some(interaction.cursor))
+            panel.revealSelectionMenuLater()
           else: panel.hideSelectionMenu()
       elif event.button.button == uint8(MouseButton.Left) and not is_shifted:
         # Clear selection, mirroring browser; shift means "keep what I have".
