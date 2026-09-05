@@ -46,11 +46,12 @@ const
   ROUNDS_PLACEMENT_LEAST* = 5
     ## Fix halvings run inside bracketed step.
     ##   Five puts answer within 1/384 of full move, under pixel of any pan or turn here.
-  FRACTION_HEIGHT_APPROACH_POINT* = 0.05
+  FRACTION_HEIGHT_APPROACH_POINT* = 0.01
     ## Fix how much of frame's height picked dot's disc spans once pointer pick has come in.
     ##   Chosen by eye: sixth of frame was too close, object filling view with nothing
-    ##   about it; twentieth is plainly seen, neighbours still in frame.
-  FRACTION_HEIGHT_APPROACH_PLANE* = 0.30
+    ##   about it, and twentieth still too close; hundredth is disc rather than dot, with
+    ##   its neighbourhood in frame.
+  FRACTION_HEIGHT_APPROACH_PLANE* = 0.40
     ## Fix how much of frame's height picked plane's disc spans once pick has come in.
     ##   Disc's major axis, whatever its tilt. Chosen by eye beside point's: plane that
     ##   only ever pulled back to keep its rim on screen never came to be looked at.

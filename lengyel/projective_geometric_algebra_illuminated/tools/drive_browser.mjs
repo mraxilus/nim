@@ -794,11 +794,12 @@ const anchorOfPicked = () => page.evaluate((slot) => {
 }, points_pickable[0]);
 const anchor_out = await anchorOfPicked();
 await page.mouse.move(anchor_out.x, anchor_out.y);
-// Out past sixty units, where 0.08 of radius is under floor dot's three pixels.
-for (let notch = 0; notch < 60; notch += 1) {
+// Wheel out past hundred units.
+//   Well past thirty, where 0.08 of radius drops under floor dot's three pixels.
+for (let notch = 0; notch < 80; notch += 1) {
   await page.mouse.wheel(0, 120);
   await page.waitForTimeout(40);
-  if ((await readCamera()).distance > 60) break;
+  if ((await readCamera()).distance > 100) break;
 }
 await settleCamera();
 const camera_notched = await readCamera();
@@ -810,7 +811,7 @@ await settleCamera();
 const camera_repicked = await readCamera();
 report(
   'a second pick of the object the camera already holds comes in again',
-  repick_at.in_front && camera_notched.distance > 10 * camera_near.distance &&
+  repick_at.in_front && camera_notched.distance > 3 * camera_near.distance &&
     camera_repicked.distance < 0.5 * camera_notched.distance &&
     (await page.evaluate(() => nimSelectionSlots().length)) === 1,
   `distance ${camera_near.distance.toFixed(2)} -> notch ${camera_notched.distance.toFixed(2)} ` +
@@ -818,7 +819,7 @@ report(
 );
 // **Plane picked by pointer is brought to its size.** From Home, right-click opening
 // scene's ground plane off-centre: after settle its disc's centre stands at depth where
-// diameter `2*EXTENT_PLANE_F` spans 0.30 of frame's height, and menu is up.
+// diameter `2*EXTENT_PLANE_F` spans 0.40 of frame's height, and menu is up.
 await clearTheGlass();
 await page.keyboard.press('Home');
 await settleCamera();
@@ -846,12 +847,12 @@ const camera_plane = await readCamera();
 const centre_plane = await page.evaluate((slot) => Array.from(nimAnchorWorld(slot)), slot_plane);
 const depth_plane = depthOf(camera_plane, centre_plane);
 const fov_degrees = await page.evaluate(() => nimCameraFov());
-const depth_wanted = 16 / (2 * 0.3 * Math.tan((fov_degrees / 2) * Math.PI / 180));
+const depth_wanted = 16 / (2 * 0.4 * Math.tan((fov_degrees / 2) * Math.PI / 180));
 const is_menu_up_plane = await page.evaluate(
   () => document.getElementById('selection-menu').classList.contains('show'),
 );
 report(
-  'a plane picked by pointer is brought to a third of the frame',
+  'a plane picked by pointer is brought to two fifths of the frame',
   hover_plane === slot_plane && Math.abs(depth_plane - depth_wanted) < 0.01 * depth_wanted &&
     is_menu_up_plane,
   `hover ${hover_plane} (ground ${slot_plane}); disc centre at depth ` +
