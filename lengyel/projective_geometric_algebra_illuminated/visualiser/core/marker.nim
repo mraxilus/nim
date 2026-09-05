@@ -52,12 +52,12 @@ const
     ##   what makes selection legible.
     ##   Held tight: wide band reads as second object, and on several selected items
     ##   bands become busiest thing on screen.
-  HEIGHT_MARKER_LABEL* = 14.0
+  HEIGHT_MARKER_LABEL* = 16.0
     ## Set nominal height of selected object's name label, in pixels.
     ##   Label's centre is placed half this above marker's top, so text box sits clear
     ##   of outline whichever face each front-end sets; faces differ, metrics stay theirs.
     ##   Fourteen is comfortable floor glanceable on-screen text research puts on face
-    ##   size; thirteen read as small, and bigger is better there.
+    ##   size, and read small over scene; sixteen asked for by eye, at semibold weight.
   WIDTH_MARKER_LABEL_HALO* = 2.0
     ## Set width of halo around label's letters, in pixels.
     ##   Halo wears scene's backdrop colour, not marker's white: halo that blends with

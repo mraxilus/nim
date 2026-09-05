@@ -62,9 +62,12 @@ const
 #   only `proc` may reach effects, which is what makes `func` mean anything here.
 proc init*(
   window: Window; context: GlContext;
-  path_font, path_font_math, path_font_symbol: cstring; size_font: cfloat
+  path_font, path_font_math, path_font_symbol: cstring; size_font: cfloat;
+  path_font_label: cstring; size_label: cfloat
 ): bool {.importc: "guiInit", sideEffect.}
   ## Start Dear ImGui over SDL3 window and OpenGL context, loading three faces.
+  ##   Fourth face, `path_font_label` at `size_label`, sets selected object's name label;
+  ##   heavier than UI text. Missing file leaves label in UI face.
 
 proc shutdown*() {.importc: "guiShutdown", sideEffect.}
   ## Tear Dear ImGui and both its backends down.

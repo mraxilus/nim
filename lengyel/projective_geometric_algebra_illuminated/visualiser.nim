@@ -132,6 +132,11 @@ const
   PATH_FONT_SYMBOL* {.define: "visualiser.path_font_symbol".} =
     "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"
     ## Carry bulk and weight dual stars and abandon button's cross. Merged same way.
+  PATH_FONT_LABEL* {.define: "visualiser.path_font_label".} =
+    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"
+    ## Set selected object's name label, heavier than UI text as browser's semibold is.
+    ##   Bold is only heavier Noto Sans weight system package ships; no semibold there.
+    ##   Own face rather than merged: label alone is set in it, at `HEIGHT_MARKER_LABEL`.
   SIZE_FONT* = 16.0'f32
   PATH_EXPORT_DEFAULT* = "rga_visualiser.png"
 
@@ -1939,7 +1944,8 @@ proc main() =
   echo &"OpenGL: {gl.getString(gl.VERSION)}"
 
   doAssert gui.init(
-    window, context, PATH_FONT, PATH_FONT_MATH, PATH_FONT_SYMBOL, SIZE_FONT
+    window, context, PATH_FONT, PATH_FONT_MATH, PATH_FONT_SYMBOL, SIZE_FONT,
+    PATH_FONT_LABEL, cfloat(HEIGHT_MARKER_LABEL),
   ), "Dear ImGui must start; got `false` from `gui.init`."
   defer: gui.shutdown()
   if not gui.isFontLoaded():

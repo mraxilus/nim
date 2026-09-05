@@ -884,19 +884,23 @@ const labelled = await page.evaluate((slots) => {
   const ground = nimInkColor(nimInkBackdrop());
   const halo = 'rgba(' + Math.round(ground[0] * 255) + ',' + Math.round(ground[1] * 255) +
     ',' + Math.round(ground[2] * 255) + ',' + nimOverlayMetrics()[5] + ')';
+  const face = texts().length > 0 ? getComputedStyle(texts()[0]) : null;
   return {
     count_two: two.length, first, ink, halo, anchor_y: anchor[1],
     labels: [nimItemLabel(slots[0]), nimItemLabel(slots[1])],
+    weight: face ? face.fontWeight : '', size: face ? face.fontSize : '',
   };
 }, points_pickable);
 report(
   'a selected object wears its name above its marker, in its ink, haloed',
   labelled.count_two === 2 && labelled.first !== undefined &&
     labelled.first.fill === labelled.ink && labelled.first.stroke === labelled.halo &&
-    labelled.first.y < labelled.anchor_y,
+    labelled.first.y < labelled.anchor_y && labelled.weight === '600' &&
+    labelled.size === '16px',
   `${labelled.count_two} labels for two selected (${labelled.labels.join(', ')}); ` +
     (labelled.first ? `fill ${labelled.first.fill} (ink ${labelled.ink}), ` +
-      `y ${labelled.first.y.toFixed(0)} above anchor ${labelled.anchor_y.toFixed(0)}` :
+      `y ${labelled.first.y.toFixed(0)} above anchor ${labelled.anchor_y.toFixed(0)}, ` +
+      `${labelled.weight} at ${labelled.size}` :
       'first label missing'),
 );
 report(

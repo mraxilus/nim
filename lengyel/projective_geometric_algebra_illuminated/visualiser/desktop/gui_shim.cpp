@@ -15,6 +15,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cfloat>
 #include <utility>
 
 // Build atlas from three faces, merged in order of decreasing generality.
@@ -50,11 +51,16 @@ static const ImWchar RANGES_SYMBOL[] = {
 //   Dear ImGui reports that only at moment of loading, and caller wants to say so once,
 //   at startup.
 static bool is_font_loaded = false;
+// Hold face selected object's name label is set in, heavier than UI text.
+//   Null where its file was missing, and label falls back to UI face.
+static ImFont *font_label = nullptr;
+static float size_font_label = 0.0f;
 
 extern "C" {
 
 bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
-             const char* path_font_math, const char* path_font_symbol, float size_font) {
+             const char* path_font_math, const char* path_font_symbol, float size_font,
+             const char* path_font_label, float size_label) {
   IMGUI_CHECKVERSION();
   if (ImGui::CreateContext() == nullptr) return false;
   ImGui::StyleColorsDark();
@@ -83,6 +89,20 @@ bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
       if (pair.first == nullptr || pair.first[0] == '\0') continue;
       if (atlas->AddFontFromFileTTF(pair.first, size_font, &merge, pair.second) == nullptr)
         is_font_loaded = false;
+    }
+    // Add label's own face second, so UI face stays atlas's default.
+    //   Same two supplementary faces merged in at label's size: label carries operator
+    //   notation too, and wedge drew as box without them.
+    size_font_label = size_label;
+    if (path_font_label != nullptr && path_font_label[0] != '\0') {
+      font_label = atlas->AddFontFromFileTTF(path_font_label, size_label, nullptr, RANGES_TEXT);
+      if (font_label != nullptr) {
+        for (auto pair : {std::pair<const char*, const ImWchar*>{path_font_math, RANGES_MATH},
+                          {path_font_symbol, RANGES_SYMBOL}}) {
+          if (pair.first == nullptr || pair.first[0] == '\0') continue;
+          atlas->AddFontFromFileTTF(pair.first, size_label, &merge, pair.second);
+        }
+      }
     }
   }
   return true;
@@ -600,19 +620,23 @@ void guiOverlayText(float cx, float cy, float red, float green, float blue, floa
 void guiOverlayLabel(float cx, float cy, float fill_red, float fill_green, float fill_blue,
                      float stroke_red, float stroke_green, float stroke_blue, float alpha,
                      const char *text) {
-  const ImVec2 size = ImGui::CalcTextSize(text);
-  const ImVec2 at(cx - 0.5f * size.x, cy - 0.5f * size.y);
+  // Set in label face at its own size; UI face where label face was not loaded.
+  ImFont *font = font_label != nullptr ? font_label : ImGui::GetFont();
+  const float size = size_font_label > 0.0f ? size_font_label : ImGui::GetFontSize();
+  const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+  const ImVec2 at(cx - 0.5f * extent.x, cy - 0.5f * extent.y);
   ImDrawList *list = overlayList(false);
   const ImU32 stroke =
       ImGui::ColorConvertFloat4ToU32(ImVec4(stroke_red, stroke_green, stroke_blue, alpha));
   for (int dx = -1; dx <= 1; dx += 1) {
     for (int dy = -1; dy <= 1; dy += 1) {
       if (dx == 0 && dy == 0) continue;
-      list->AddText(ImVec2(at.x + (float)dx, at.y + (float)dy), stroke, text);
+      list->AddText(font, size, ImVec2(at.x + (float)dx, at.y + (float)dy), stroke, text);
     }
   }
   list->AddText(
-      at, ImGui::ColorConvertFloat4ToU32(ImVec4(fill_red, fill_green, fill_blue, 1.0f)), text);
+      font, size, at,
+      ImGui::ColorConvertFloat4ToU32(ImVec4(fill_red, fill_green, fill_blue, 1.0f)), text);
 }
 
 } // extern "C"
